@@ -3,30 +3,12 @@ $title = 'Scriptler';
 $user = $auth->user();
 $db = Database::getInstance();
 
-// Kullanıcının tüm kiralamalarını çek
-$userRentals = $db->fetchAll("
-    SELECT r.*, s.id as script_id, s.name as script_name, s.slug, 
-           s.description, s.image, s.status as script_status,
-           d.domain, r.expires_at, r.status as rental_status, 
-           r.price_paid, r.purchased_at, r.activated_at
-    FROM rentals r
-    JOIN scripts s ON r.script_id = s.id
-    LEFT JOIN script_domains d ON r.domain_id = d.id
-    WHERE r.user_id = ? AND r.status != 'cancelled'
-    ORDER BY r.purchased_at DESC
-", [$user['id']]);
+// ÖNEMLİ: TÜM KULLANICILAR TÜM SCRİPTLERİ GÖRECEKscrip
+// Sadece satın alanlar kendi scriptlerini özel görecek
 
-// Kiralanmış scriptleri diziye çevir
-$rentalByScript = [];
-foreach ($userRentals as $rental) {
-    if (!isset($rentalByScript[$rental['script_id']])) {
-        $rentalByScript[$rental['script_id']] = $rental;
-    }
-}
-
-// TÜM aktif scriptleri çek (herkes için görünür)
-$scripts = $db->fetchAll("
-    SELECT s.*, 
+// 1. Önce TÜM aktif scriptleri çek (HERKESİN göreceği)
+$allScripts = $db->fetchAll("
+    SELECT s.*,
            (SELECT COUNT(*) FROM script_packages WHERE script_id = s.id) as package_count,
            (SELECT COUNT(*) FROM script_domains WHERE script_id = s.id AND status = 'available') as available_domains,
            (SELECT MIN(price_usdt) FROM script_packages WHERE script_id = s.id) as min_price
@@ -34,6 +16,26 @@ $scripts = $db->fetchAll("
     WHERE s.status = 'active'
     ORDER BY s.created_at DESC
 ");
+
+// 2. Bu kullanıcının satın aldığı scriptleri çek
+$myRentals = $db->fetchAll("
+    SELECT r.*, s.id as script_id, s.name as script_name,
+           d.domain, r.expires_at, r.status as rental_status,
+           r.purchased_at, r.activated_at
+    FROM rentals r
+    JOIN scripts s ON r.script_id = s.id
+    LEFT JOIN script_domains d ON r.domain_id = d.id
+    WHERE r.user_id = ? AND r.status != 'cancelled'
+    ORDER BY r.purchased_at DESC
+", [$user['id']]);
+
+// 3. Satın aldıklarımı script_id'ye göre indexle
+$myRentalsByScriptId = [];
+foreach ($myRentals as $rental) {
+    if (!isset($myRentalsByScriptId[$rental['script_id']])) {
+        $myRentalsByScriptId[$rental['script_id']] = $rental;
+    }
+}
 
 require 'templates/header.php';
 ?>
@@ -45,83 +47,71 @@ require 'templates/header.php';
         <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
             <div style="width: 4px; height: 40px; background: linear-gradient(180deg, var(--primary), var(--accent)); border-radius: 4px;"></div>
             <h1 style="margin: 0; font-weight: 900; font-size: 36px; background: linear-gradient(135deg, var(--primary-light), var(--accent)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">
-                Mevcut Scriptler
+                Tüm Scriptler
             </h1>
         </div>
-        <p style="color: var(--text-secondary); font-size: 16px; margin-left: 16px;">İhtiyacınıza uygun scripti seçin ve hemen kiralamaya başlayın.</p>
+        <p style="color: var(--text-secondary); font-size: 16px; margin-left: 16px;">
+            <?php echo count($allScripts); ?> script mevcut • İstediğinizi seçin ve kiralayın
+        </p>
     </div>
 </div>
 
 <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-4">
-    <?php foreach ($scripts as $script): 
-        // Bu kullanıcı bu scripti satın aldı mı?
-        $isRented = isset($rentalByScript[$script['id']]);
-        $rental = $rentalByScript[$script['id']] ?? null;
+    <?php 
+    // HER KULLANICI TÜM SCRİPTLERİ GÖRÜR!
+    foreach ($allScripts as $script): 
+        // Ben bu scripti satın aldım mı?
+        $iOwnThis = isset($myRentalsByScriptId[$script['id']]);
+        $myRental = $iOwnThis ? $myRentalsByScriptId[$script['id']] : null;
     ?>
     <div class="col">
-        <?php if ($isRented): 
-            // SATIN ALINMIŞ SCRIPT - Sadece bu kullanıcı için özel gösterim
-            $usernamePrefix = substr($user['username'], 0, 4);
-            $maskedUsername = $usernamePrefix . str_repeat('•', max(0, strlen($user['username']) - 4));
+        <?php if ($iOwnThis): 
+            // BENİM SCRİPTİM - Özel gösterim
+            $statusClass = 'success';
+            $statusText = 'SAHİBİM';
+            $statusIcon = 'check-circle-fill';
             
-            $statusClass = '';
-            $statusText = '';
-            $statusIcon = '';
-            $dateText = '';
-            $dateLabel = '';
-            
-            if ($rental['rental_status'] === 'active' && $rental['expires_at']) {
+            if ($myRental['rental_status'] === 'active') {
                 $statusClass = 'success';
                 $statusText = 'AKTİF';
-                $statusIcon = 'check-circle-fill';
-                $daysLeft = ceil((strtotime($rental['expires_at']) - time()) / 86400);
-                $dateLabel = 'Kalan Süre';
-                $dateText = $daysLeft . ' gün';
-            } elseif (in_array($rental['rental_status'], ['setup_domain', 'setup_config', 'setup_deploy', 'pending'])) {
+                $daysLeft = ceil((strtotime($myRental['expires_at']) - time()) / 86400);
+                $dateText = $daysLeft . ' gün kaldı';
+            } elseif (in_array($myRental['rental_status'], ['setup_domain', 'setup_config', 'setup_deploy'])) {
                 $statusClass = 'warning';
                 $statusText = 'KURULUMDA';
-                $statusIcon = 'hourglass-split';
-                $dateLabel = 'Satın Alım';
-                $dateText = date('d.m.Y', strtotime($rental['purchased_at']));
-            } elseif ($rental['rental_status'] === 'expired') {
+                $dateText = 'Kurulum devam ediyor';
+            } elseif ($myRental['rental_status'] === 'expired') {
                 $statusClass = 'danger';
                 $statusText = 'SÜRESİ DOLDU';
-                $statusIcon = 'x-circle';
-                $dateLabel = 'Bitiş';
-                $dateText = date('d.m.Y', strtotime($rental['expires_at']));
+                $dateText = 'Süresi dolmuş';
             } else {
                 $statusClass = 'info';
                 $statusText = 'BEKLİYOR';
-                $statusIcon = 'clock';
-                $dateLabel = 'Satın Alım';
-                $dateText = date('d.m.Y', strtotime($rental['purchased_at']));
+                $dateText = 'İşlemde';
             }
+            
+            $usernamePrefix = substr($user['username'], 0, 4);
+            $maskedUsername = $usernamePrefix . str_repeat('•', max(0, strlen($user['username']) - 4));
         ?>
-        <!-- SATIN ALINMIŞ SCRIPT KARTI -->
-        <div class="card" style="height: 100%; border: 3px solid var(--<?php echo $statusClass; ?>); background: linear-gradient(135deg, rgba(var(--<?php echo $statusClass; ?>-rgb, 16, 185, 129), 0.1), rgba(var(--<?php echo $statusClass; ?>-rgb, 5, 150, 105), 0.05)); position: relative; overflow: hidden;">
-            <!-- Üst Sağ Status Badge -->
-            <div style="position: absolute; top: 16px; right: 16px; z-index: 10;">
-                <div style="background: var(--<?php echo $statusClass; ?>); color: white; padding: 8px 16px; border-radius: 20px; font-weight: 800; font-size: 12px; display: flex; align-items: center; gap: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
-                    <i class="bi bi-<?php echo $statusIcon; ?>"></i>
-                    <?php echo $statusText; ?>
-                </div>
-            </div>
-            
-            <!-- Üst Sol "SATIN ALINDI" Badge -->
+        <!-- SAHİP OLDUĞUM SCRİPT -->
+        <div class="card" style="height: 100%; border: 3px solid var(--<?php echo $statusClass; ?>); background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(5, 150, 105, 0.05)); position: relative;">
             <div style="position: absolute; top: 16px; left: 16px; z-index: 10;">
-                <div style="background: linear-gradient(135deg, #10b981, #059669); color: white; padding: 8px 16px; border-radius: 20px; font-weight: 800; font-size: 11px; display: flex; align-items: center; gap: 6px; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);">
-                    <i class="bi bi-check-circle-fill"></i>
-                    SATIN ALINDI
+                <div style="background: linear-gradient(135deg, #10b981, #059669); color: white; padding: 8px 16px; border-radius: 20px; font-weight: 800; font-size: 11px; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);">
+                    <i class="bi bi-check-circle-fill"></i> SATIN ALINDI
+                </div>
+            </div>
+            <div style="position: absolute; top: 16px; right: 16px; z-index: 10;">
+                <div style="background: var(--<?php echo $statusClass; ?>); color: white; padding: 8px 16px; border-radius: 20px; font-weight: 800; font-size: 12px;">
+                    <i class="bi bi-<?php echo $statusIcon; ?>"></i> <?php echo $statusText; ?>
                 </div>
             </div>
             
-            <div style="height: 200px; background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.05)); display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden;">
+            <div style="height: 200px; background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.05)); display: flex; align-items: center; justify-content: center; position: relative;">
                 <?php if ($script['image']): ?>
-                <img src="<?php echo $script['image']; ?>" alt="<?php echo $script['name']; ?>" style="max-width: 90%; max-height: 90%; object-fit: contain; position: relative; z-index: 1; filter: brightness(0.8);">
+                <img src="<?php echo $script['image']; ?>" alt="<?php echo $script['name']; ?>" style="max-width: 90%; max-height: 90%; object-fit: contain;">
                 <?php else: ?>
-                <i class="bi bi-box-seam" style="font-size: 80px; background: linear-gradient(135deg, var(--primary-light), var(--accent)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; opacity: 0.6;"></i>
+                <i class="bi bi-box-seam" style="font-size: 80px; color: var(--primary); opacity: 0.6;"></i>
                 <?php endif; ?>
-                <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(180deg, transparent, rgba(0,0,0,0.3));"></div>
             </div>
             
             <div class="card-body" style="padding: 24px;">
@@ -129,68 +119,50 @@ require 'templates/header.php';
                     <?php echo $script['name']; ?>
                 </h5>
                 
-                <!-- Maskelenmiş Kullanıcı -->
-                <div style="padding: 16px; background: rgba(26, 26, 46, 0.6); border-radius: 12px; margin-bottom: 16px; border: 1px solid var(--border-color);">
-                    <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px;">Sahip</div>
-                    <div style="font-family: 'Courier New', monospace; color: var(--warning); font-weight: 800; font-size: 16px;">
+                <div style="padding: 16px; background: rgba(26, 26, 46, 0.6); border-radius: 12px; margin-bottom: 16px;">
+                    <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px;">SAHİP</div>
+                    <div style="font-family: monospace; color: var(--warning); font-weight: 800; font-size: 16px;">
                         <?php echo $maskedUsername; ?>
                     </div>
                 </div>
                 
-                <!-- Süre Bilgileri -->
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
-                    <div style="padding: 16px; background: rgba(26, 26, 46, 0.4); border-radius: 10px; text-align: center; border: 1px solid var(--border-color);">
-                        <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px;"><?php echo $dateLabel; ?></div>
-                        <div style="font-size: 16px; font-weight: 800; color: var(--<?php echo $statusClass; ?>);">
-                            <?php echo $dateText; ?>
-                        </div>
+                <div style="padding: 16px; background: rgba(26, 26, 46, 0.4); border-radius: 10px; margin-bottom: 16px; text-align: center;">
+                    <div style="font-size: 16px; font-weight: 700; color: var(--<?php echo $statusClass; ?>);">
+                        <?php echo $dateText; ?>
                     </div>
-                    <?php if ($rental['expires_at']): ?>
-                    <div style="padding: 16px; background: rgba(26, 26, 46, 0.4); border-radius: 10px; text-align: center; border: 1px solid var(--border-color);">
-                        <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px;">Bitiş</div>
-                        <div style="font-size: 16px; font-weight: 800; color: var(--text-primary);">
-                            <?php echo date('d.m.Y', strtotime($rental['expires_at'])); ?>
-                        </div>
-                    </div>
-                    <?php endif; ?>
                 </div>
                 
-                <!-- Domain -->
-                <?php if ($rental['domain']): ?>
-                <div style="padding: 12px 16px; background: rgba(6, 182, 212, 0.1); border-radius: 10px; margin-bottom: 16px; border: 1px solid rgba(6, 182, 212, 0.3);">
+                <?php if ($myRental['domain']): ?>
+                <div style="padding: 12px; background: rgba(6, 182, 212, 0.1); border-radius: 10px; margin-bottom: 16px;">
                     <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">DOMAIN</div>
-                    <code style="font-size: 13px; color: var(--info); word-break: break-all;"><?php echo $rental['domain']; ?></code>
+                    <code style="font-size: 13px; color: var(--info);"><?php echo $myRental['domain']; ?></code>
                 </div>
                 <?php endif; ?>
                 
-                <!-- Aksiyon Butonları -->
-                <?php if (in_array($rental['rental_status'], ['setup_domain', 'setup_config', 'setup_deploy', 'pending'])): ?>
-                <a href="<?php echo Helper::url('rental/setup/' . $rental['id']); ?>" class="btn btn-warning w-100">
-                    <i class="bi bi-play-fill"></i>
-                    Kuruluma Devam
+                <?php if (in_array($myRental['rental_status'], ['setup_domain', 'setup_config', 'setup_deploy'])): ?>
+                <a href="<?php echo Helper::url('rental/setup/' . $myRental['id']); ?>" class="btn btn-warning w-100">
+                    <i class="bi bi-play-fill"></i> Kuruluma Devam
                 </a>
-                <?php elseif ($rental['rental_status'] === 'active'): ?>
+                <?php elseif ($myRental['rental_status'] === 'active'): ?>
                 <a href="<?php echo Helper::url('rental'); ?>" class="btn btn-success w-100">
-                    <i class="bi bi-eye"></i>
-                    Yönet
+                    <i class="bi bi-eye"></i> Yönet
                 </a>
                 <?php else: ?>
                 <a href="<?php echo Helper::url('scripts/buy/' . $script['id']); ?>" class="btn btn-primary w-100">
-                    <i class="bi bi-arrow-repeat"></i>
-                    Yeniden Kirala
+                    <i class="bi bi-arrow-repeat"></i> Yeniden Kirala
                 </a>
                 <?php endif; ?>
             </div>
         </div>
         
         <?php else: ?>
-        <!-- NORMAL SATIN ALINABİLİR SCRIPT KARTI (Tüm kullanıcılar için görünür) -->
-        <div class="card" style="height: 100%; transition: all 0.3s;" onmouseover="this.style.transform='translateY(-8px) scale(1.02)'" onmouseout="this.style.transform='translateY(0) scale(1)'">
-            <div style="height: 200px; background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.05)); display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden;">
+        <!-- NORMAL SCRİPT - Herkes bu scripti görecek -->
+        <div class="card" style="height: 100%; transition: all 0.3s;" onmouseover="this.style.transform='translateY(-8px)'" onmouseout="this.style.transform='translateY(0)'">
+            <div style="height: 200px; background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.05)); display: flex; align-items: center; justify-content: center;">
                 <?php if ($script['image']): ?>
                 <img src="<?php echo $script['image']; ?>" alt="<?php echo $script['name']; ?>" style="max-width: 90%; max-height: 90%; object-fit: contain;">
                 <?php else: ?>
-                <i class="bi bi-box-seam" style="font-size: 80px; background: linear-gradient(135deg, var(--primary-light), var(--accent)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;"></i>
+                <i class="bi bi-box-seam" style="font-size: 80px; color: var(--primary);"></i>
                 <?php endif; ?>
             </div>
             
@@ -202,34 +174,30 @@ require 'templates/header.php';
                     <?php echo Helper::excerpt($script['description'], 100); ?>
                 </p>
                 
-                <!-- Script Bilgileri -->
                 <div style="display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap;">
-                    <div style="padding: 8px 16px; background: rgba(6, 182, 212, 0.1); border-radius: 20px; border: 1px solid rgba(6, 182, 212, 0.3); font-size: 13px;">
+                    <div style="padding: 8px 16px; background: rgba(6, 182, 212, 0.1); border-radius: 20px; font-size: 13px;">
                         <i class="bi bi-globe" style="color: var(--info);"></i>
                         <strong style="margin-left: 6px; color: var(--info);"><?php echo $script['available_domains']; ?></strong>
                         <span style="margin-left: 4px; color: var(--text-muted);">Domain</span>
                     </div>
-                    <div style="padding: 8px 16px; background: rgba(16, 185, 129, 0.1); border-radius: 20px; border: 1px solid rgba(16, 185, 129, 0.3); font-size: 13px;">
+                    <div style="padding: 8px 16px; background: rgba(16, 185, 129, 0.1); border-radius: 20px; font-size: 13px;">
                         <i class="bi bi-box" style="color: var(--success);"></i>
                         <strong style="margin-left: 6px; color: var(--success);"><?php echo $script['package_count']; ?></strong>
                         <span style="margin-left: 4px; color: var(--text-muted);">Paket</span>
                     </div>
                 </div>
                 
-                <!-- Fiyat -->
                 <?php if ($script['min_price']): ?>
-                <div style="padding: 16px; background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(5, 150, 105, 0.05)); border-radius: 12px; margin-bottom: 20px; text-align: center; border: 1px solid rgba(16, 185, 129, 0.3);">
-                    <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Başlangıç Fiyatı</div>
+                <div style="padding: 16px; background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(5, 150, 105, 0.05)); border-radius: 12px; margin-bottom: 20px; text-align: center;">
+                    <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">BAŞLANGIÇ FİYATI</div>
                     <div style="font-size: 24px; font-weight: 900; color: var(--success);">
                         <?php echo number_format($script['min_price'], 2); ?> USDT
                     </div>
                 </div>
                 <?php endif; ?>
                 
-                <!-- Satın Al Butonu -->
                 <a href="<?php echo Helper::url('scripts/buy/' . $script['id']); ?>" class="btn btn-primary w-100" style="padding: 14px;">
-                    <i class="bi bi-cart-plus"></i>
-                    Satın Al
+                    <i class="bi bi-cart-plus"></i> Satın Al
                 </a>
             </div>
         </div>
@@ -238,7 +206,7 @@ require 'templates/header.php';
     <?php endforeach; ?>
 </div>
 
-<?php if (empty($scripts)): ?>
+<?php if (empty($allScripts)): ?>
 <div class="empty-state">
     <div class="empty-icon">
         <i class="bi bi-box-seam"></i>
