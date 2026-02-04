@@ -5,8 +5,36 @@ require_once 'core/Security.php';
 require_once 'core/Auth.php';
 require_once 'core/Helper.php';
 
+/* =====================
+   BOOTSTRAP (HER ZAMAN)
+===================== */
+$db   = Database::getInstance();
 $auth = new Auth();
 $csrfToken = Security::generateToken();
+
+/* =====================
+   AJAX BYPASS (DOĞRU YER)
+===================== */
+$uriPath = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+
+if (strpos($uriPath, '/rental/setup/ajax/') === 0) {
+
+    // auth KONTROLÜ VAR
+    if (!$auth->check()) {
+        http_response_code(401);
+        exit('yetkisiz');
+    }
+
+    $ajaxFile = __DIR__ . '/modules' . $uriPath;
+
+    if (file_exists($ajaxFile)) {
+        require $ajaxFile;
+        exit;
+    } else {
+        http_response_code(404);
+        exit('ajax not found');
+    }
+}
 
 // URL parse
 $uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
