@@ -151,7 +151,8 @@ require 'templates/header.php';
                 $statusText = 'BEKLİYOR';
                 $statusIcon = 'clock';
             }
-            $daysLeft = $rental['expires_at'] ? ceil((strtotime($rental['expires_at']) - time()) / 86400) : 0;
+            // SAAT olarak hesapla (3600 saniye = 1 saat)
+            $hoursLeft = $rental['expires_at'] ? ceil((strtotime($rental['expires_at']) - time()) / 3600) : 0;
         }
     ?>
     <div class="col">
@@ -242,11 +243,11 @@ require 'templates/header.php';
                     <?php endif; ?>
                     
                     <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <span style="font-size: 12px; color: var(--text-muted);">DURUM</span>
+                        <span style="font-size: 12px; color: var(--text-muted);">KALAN SÜRE</span>
                         <span style="font-size: 13px; color: var(--<?php echo $statusColor; ?>); font-weight: 700;">
                             <?php 
                             if ($rental['expires_at']) {
-                                echo $daysLeft . ' gün kaldı';
+                                echo $hoursLeft . ' saat kaldı';
                             } else {
                                 echo 'Kurulum bekliyor';
                             }
@@ -257,7 +258,7 @@ require 'templates/header.php';
                 
                 <!-- Aksiyon Butonu -->
                 <?php if ($isMyRental): ?>
-                <a href="<?php echo Helper::url('rental/setup/' . $rental['id']); ?>" class="btn btn-<?php echo $rental['rental_status'] == 'active' ? 'success' : 'warning'; ?> w-100" style="padding: 14px; font-weight: 700;">
+                <a href="<?php echo Helper::url('rental'); ?>" class="btn btn-<?php echo $rental['rental_status'] == 'active' ? 'success' : 'warning'; ?> w-100" style="padding: 14px; font-weight: 700;">
                     <i class="bi bi-<?php echo $rental['rental_status'] == 'active' ? 'eye' : 'gear-fill'; ?>"></i>
                     <?php echo $rental['rental_status'] == 'active' ? 'Yönet' : 'Kurulum'; ?>
                 </a>

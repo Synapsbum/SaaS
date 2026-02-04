@@ -8,7 +8,8 @@ define('DB_PASS', '962xzZUJamRyWH4WYP4d');
 // Cryptomus API
 define('CRYPTOMUS_API_KEY', 'YOUR_API_KEY_HERE');
 define('CRYPTOMUS_MERCHANT_ID', 'YOUR_MERCHANT_ID_HERE');
-
+define('OXAPAY_API_KEY', 'I2TDZ7-OEQDSZ-GIYIYW-KSIEH4');
+define('OXAPAY_SANDBOX', false); // Test için true yap
 // Site Ayarları
 define('SITE_NAME', 'tokat.bet Scripts');
 define('SITE_URL', 'https://tokat.bet');

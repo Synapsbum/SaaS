@@ -2,465 +2,554 @@
 $title = 'Script Yönetimi';
 $db = Database::getInstance();
 
-// Script ekleme
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'add') {
-    if (!Security::validateToken($_POST['csrf_token'] ?? '')) {
-        Helper::flash('error', 'Güvenlik hatası');
-    } else {
-        $imagePath = null;
-        if (!empty($_FILES['image']['tmp_name'])) {
-            $uploadDir = __DIR__ . '/../../uploads/scripts/';
-            if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
-            
-            $ext = pathinfo($_FILES['image']['name'], PATHINFO_EXTENSION);
-            $filename = uniqid() . '.' . $ext;
-            $targetFile = $uploadDir . $filename;
-            
-            if (move_uploaded_file($_FILES['image']['tmp_name'], $targetFile)) {
-                $imagePath = 'uploads/scripts/' . $filename;
-            }
-        }
-        
-        $scriptId = $db->insert('scripts', [
-            'name' => $_POST['name'],
-            'slug' => strtolower(preg_replace('/[^a-z0-9]/', '-', $_POST['name'])),
-            'description' => $_POST['description'],
-            'image' => $imagePath,
-            'ssh_host' => $_POST['ssh_host'],
-            'ssh_user' => $_POST['ssh_user'],
-            'ssh_pass' => $_POST['ssh_pass'],
-            'setup_command' => $_POST['setup_command'],
-            'status' => 'active',
-            'created_at' => date('Y-m-d H:i:s')
-        ]);
-        
-        // Paketleri ekle
-        foreach ([1 => 'price_1day', 3 => 'price_3day', 7 => 'price_7day', 30 => 'price_30day'] as $days => $field) {
-            if (!empty($_POST[$field]) && $_POST[$field] > 0) {
-                $db->insert('script_packages', [
-                    'script_id' => $scriptId,
-                    'duration_days' => $days,
-                    'price_usdt' => $_POST[$field]
-                ]);
-            }
-        }
-        
-        Helper::flash('success', 'Script eklendi');
-    }
-    header('Location: ' . $_SERVER['REQUEST_URI']);
-    exit;
+// CSRF token
+if (empty($_SESSION[CSRF_TOKEN_NAME])) {
+    $_SESSION[CSRF_TOKEN_NAME] = bin2hex(random_bytes(32));
 }
+$csrfToken = $_SESSION[CSRF_TOKEN_NAME];
 
-// Script güncelleme
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'edit') {
-    if (!Security::validateToken($_POST['csrf_token'] ?? '')) {
+// Kategorileri çek
+$categories = $db->fetchAll("SELECT id, name FROM script_categories WHERE status = 1 ORDER BY name");
+
+// İşlemler
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!isset($_POST['csrf_token']) || !hash_equals($csrfToken, $_POST['csrf_token'])) {
         Helper::flash('error', 'Güvenlik hatası');
     } else {
-        $scriptId = $_POST['script_id'];
+        $action = $_POST['action'] ?? '';
         
-        $updateData = [
-            'name' => $_POST['name'],
-            'description' => $_POST['description'],
-            'ssh_host' => $_POST['ssh_host'],
-            'ssh_user' => $_POST['ssh_user'],
-            'ssh_pass' => $_POST['ssh_pass'] ?: null, // Boşsa değiştirme
-            'setup_command' => $_POST['setup_command'],
-            'status' => $_POST['status']
-        ];
-        
-        if (!empty($_FILES['image']['tmp_name'])) {
-            $uploadDir = __DIR__ . '/../../uploads/scripts/';
-            if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
-            
-            $ext = pathinfo($_FILES['image']['name'], PATHINFO_EXTENSION);
-            $filename = uniqid() . '.' . $ext;
-            $targetFile = $uploadDir . $filename;
-            
-            if (move_uploaded_file($_FILES['image']['tmp_name'], $targetFile)) {
-                $oldScript = $db->fetch("SELECT image FROM scripts WHERE id = ?", [$scriptId]);
-                if ($oldScript['image'] && file_exists(__DIR__ . '/../../' . $oldScript['image'])) {
-                    unlink(__DIR__ . '/../../' . $oldScript['image']);
+        switch ($action) {
+            case 'add':
+                try {
+                    $slug = Helper::slug($_POST['name']);
+                    $db->insert('scripts', [
+                        'category_id' => $_POST['category_id'] ?: null,
+                        'name' => $_POST['name'],
+                        'slug' => $slug,
+                        'description' => $_POST['description'] ?? '',
+                        'image' => $_POST['image'] ?? null,
+                        'status' => $_POST['status'] ?? 'active',
+                        'ssh_host' => $_POST['ssh_host'] ?? null,
+                        'ssh_port' => $_POST['ssh_port'] ?: 22,
+                        'ssh_user' => $_POST['ssh_user'] ?? null,
+                        'ssh_pass' => $_POST['ssh_pass'] ?? null,
+                        'ssh_key_path' => $_POST['ssh_key_path'] ?? null,
+                        'setup_command' => $_POST['setup_command'] ?? null,
+                        'created_at' => date('Y-m-d H:i:s')
+                    ]);
+                    
+                    // Son ID'yi çek
+                    $scriptId = $db->fetch("SELECT LAST_INSERT_ID() as id")['id'];
+                    
+                    // Paketleri ekle
+                    if (!empty($_POST['packages']) && is_array($_POST['packages'])) {
+                        foreach ($_POST['packages'] as $pkg) {
+                            if (!empty($pkg['days']) && !empty($pkg['price'])) {
+                                $db->insert('script_packages', [
+                                    'script_id' => $scriptId,
+                                    'duration_days' => intval($pkg['days']),
+                                    'price_usdt' => floatval($pkg['price']),
+                                    'is_default' => !empty($pkg['default']) ? 1 : 0
+                                ]);
+                            }
+                        }
+                    }
+                    
+                    Helper::flash('success', 'Script başarıyla eklendi');
+                } catch (Exception $e) {
+                    Helper::flash('error', 'Hata: ' . $e->getMessage());
                 }
-                $updateData['image'] = 'uploads/scripts/' . $filename;
-            }
+                break;
+                
+            case 'edit':
+                $scriptId = intval($_POST['script_id'] ?? 0);
+                if ($scriptId) {
+                    try {
+                        $db->update('scripts', [
+                            'category_id' => $_POST['category_id'] ?: null,
+                            'name' => $_POST['name'],
+                            'slug' => Helper::slug($_POST['name']),
+                            'description' => $_POST['description'] ?? '',
+                            'image' => $_POST['image'] ?? null,
+                            'status' => $_POST['status'] ?? 'active',
+                            'ssh_host' => $_POST['ssh_host'] ?? null,
+                            'ssh_port' => $_POST['ssh_port'] ?: 22,
+                            'ssh_user' => $_POST['ssh_user'] ?? null,
+                            'ssh_pass' => $_POST['ssh_pass'] ?? null,
+                            'ssh_key_path' => $_POST['ssh_key_path'] ?? null,
+                            'setup_command' => $_POST['setup_command'] ?? null
+                        ], 'id = ?', [$scriptId]);
+                        
+                        Helper::flash('success', 'Script güncellendi');
+                    } catch (Exception $e) {
+                        Helper::flash('error', 'Güncelleme hatası: ' . $e->getMessage());
+                    }
+                }
+                break;
+                
+            case 'update_packages':
+                $scriptId = intval($_POST['script_id'] ?? 0);
+                if ($scriptId) {
+                    // Mevcut paketleri sil
+                    $db->query("DELETE FROM script_packages WHERE script_id = ?", [$scriptId]);
+                    
+                    // Yenilerini ekle
+                    if (!empty($_POST['packages']) && is_array($_POST['packages'])) {
+                        foreach ($_POST['packages'] as $pkg) {
+                            if (!empty($pkg['days']) && !empty($pkg['price'])) {
+                                $db->insert('script_packages', [
+                                    'script_id' => $scriptId,
+                                    'duration_days' => intval($pkg['days']),
+                                    'price_usdt' => floatval($pkg['price']),
+                                    'is_default' => !empty($pkg['default']) ? 1 : 0
+                                ]);
+                            }
+                        }
+                    }
+                    Helper::flash('success', 'Paketler güncellendi');
+                }
+                break;
+                
+            case 'toggle_status':
+                $scriptId = intval($_POST['script_id'] ?? 0);
+                $script = $db->fetch("SELECT status FROM scripts WHERE id = ?", [$scriptId]);
+                if ($script) {
+                    $newStatus = $script['status'] === 'active' ? 'inactive' : 'active';
+                    $db->update('scripts', ['status' => $newStatus], 'id = ?', [$scriptId]);
+                    Helper::flash('success', 'Durum güncellendi');
+                }
+                break;
+                
+            case 'delete':
+                $scriptId = intval($_POST['script_id'] ?? 0);
+                // Kiralama varsa silme
+                $rentalCount = $db->fetch("SELECT COUNT(*) as total FROM rentals WHERE script_id = ?", [$scriptId])['total'];
+                if ($rentalCount > 0) {
+                    Helper::flash('error', 'Bu scripte ait kiralamalar var, silinemez');
+                } else {
+                    $db->query("DELETE FROM script_packages WHERE script_id = ?", [$scriptId]);
+                    $db->query("DELETE FROM script_domains WHERE script_id = ?", [$scriptId]);
+                    $db->query("DELETE FROM scripts WHERE id = ?", [$scriptId]);
+                    Helper::flash('success', 'Script silindi');
+                }
+                break;
         }
-        
-        $db->update('scripts', $updateData, 'id = ?', [$scriptId]);
-        
-        // Paketleri güncelle
-        $db->query("DELETE FROM script_packages WHERE script_id = ?", [$scriptId]);
-        foreach ([1 => 'price_1day', 3 => 'price_3day', 7 => 'price_7day', 30 => 'price_30day'] as $days => $field) {
-            if (!empty($_POST[$field]) && $_POST[$field] > 0) {
-                $db->insert('script_packages', [
-                    'script_id' => $scriptId,
-                    'duration_days' => $days,
-                    'price_usdt' => $_POST[$field]
-                ]);
-            }
-        }
-        
-        Helper::flash('success', 'Script güncellendi');
     }
     header('Location: ' . $_SERVER['REQUEST_URI']);
     exit;
 }
 
-// Domain işlemleri
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'add_domain') {
-    $db->insert('script_domains', [
-        'script_id' => $_POST['script_id'],
-        'domain' => $_POST['domain'],
-        'status' => 'available'
-    ]);
-    Helper::flash('success', 'Domain eklendi');
-    header('Location: ' . $_SERVER['REQUEST_URI']);
-    exit;
-}
+// Scriptleri çek
+$scripts = $db->fetchAll("
+    SELECT s.*, c.name as category_name,
+        (SELECT COUNT(*) FROM rentals WHERE script_id = s.id AND status = 'active') as active_rentals,
+        (SELECT COUNT(*) FROM script_domains WHERE script_id = s.id) as domain_count,
+        (SELECT COUNT(*) FROM script_packages WHERE script_id = s.id) as package_count
+    FROM scripts s
+    LEFT JOIN script_categories c ON s.category_id = c.id
+    ORDER BY s.created_at DESC
+");
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'delete_domain') {
-    $db->query("DELETE FROM script_domains WHERE id = ? AND status != 'in_use'", [$_POST['domain_id']]);
-    Helper::flash('success', 'Domain silindi');
-    header('Location: ' . $_SERVER['REQUEST_URI']);
-    exit;
-}
-
-// Script silme
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'delete') {
-    $scriptId = $_POST['script_id'];
-    $script = $db->fetch("SELECT image FROM scripts WHERE id = ?", [$scriptId]);
-    if ($script['image'] && file_exists(__DIR__ . '/../../' . $script['image'])) {
-        unlink(__DIR__ . '/../../' . $script['image']);
-    }
-    $db->query("DELETE FROM script_packages WHERE script_id = ?", [$scriptId]);
-    $db->query("DELETE FROM script_domains WHERE script_id = ?", [$scriptId]);
-    $db->query("DELETE FROM scripts WHERE id = ?", [$scriptId]);
-    Helper::flash('success', 'Script silindi');
-    header('Location: ' . $_SERVER['REQUEST_URI']);
-    exit;
-}
-
-$scripts = $db->fetchAll("SELECT * FROM scripts ORDER BY created_at DESC");
-
-require 'templates/header.php';
+require dirname(__FILE__) . '/templates/header.php';
 ?>
 
-<div class="container py-4">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h4 class="text-white mb-0"><i class="bi bi-box-seam me-2"></i>Script Yönetimi</h4>
-        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addScriptModal">
-            <i class="bi bi-plus-lg me-2"></i>Yeni Script
+<div class="admin-card mb-4">
+    <div class="admin-card-header">
+        <h5 class="mb-0">Script Listesi</h5>
+        <button class="btn-admin btn-primary-custom" data-bs-toggle="modal" data-bs-target="#addScriptModal">
+            <i class="bi bi-plus-lg"></i> Yeni Script Ekle
         </button>
     </div>
-
-    <div class="row g-4">
-        <?php foreach ($scripts as $script): 
-            $packages = $db->fetchAll("SELECT * FROM script_packages WHERE script_id = ? ORDER BY duration_days", [$script['id']]);
-            $domains = $db->fetchAll("SELECT * FROM script_domains WHERE script_id = ? ORDER BY status, domain", [$script['id']]);
-            $packagePrices = array_column($packages, 'price_usdt', 'duration_days');
-        ?>
-        <div class="col-12">
-            <div class="card bg-dark border-0 shadow-sm">
-                <div class="card-body p-4">
-                    <div class="row align-items-center">
-                        <div class="col-md-2 text-center">
-                            <?php if ($script['image']): ?>
-                            <img src="<?php echo Helper::url($script['image']); ?>" class="img-fluid rounded" style="max-height: 100px;">
-                            <?php else: ?>
-                            <div class="bg-secondary bg-opacity-25 rounded d-flex align-items-center justify-content-center" style="height: 100px;">
-                                <i class="bi bi-image text-muted fs-1"></i>
-                            </div>
-                            <?php endif; ?>
-                        </div>
-                        
-                        <div class="col-md-4">
-                            <h5 class="text-white mb-1"><?php echo $script['name']; ?></h5>
-                            <span class="badge bg-<?php echo $script['status'] == 'active' ? 'success' : ($script['status'] == 'maintenance' ? 'warning' : 'secondary'); ?> mb-2">
-                                <?php echo $script['status']; ?>
-                            </span>
-                            <p class="text-muted small mb-0"><?php echo Helper::excerpt($script['description'], 100); ?></p>
-                        </div>
-                        
-                        <div class="col-md-3">
-                            <div class="bg-black bg-opacity-50 rounded p-2 mb-2">
-                                <small class="text-muted d-block">Fiyatlar (USDT):</small>
-                                <div class="d-flex gap-2 flex-wrap mt-1">
-                                    <?php foreach ([1, 3, 7, 30] as $day): ?>
-                                    <?php if (isset($packagePrices[$day])): ?>
-                                    <span class="badge bg-primary"><?php echo $day; ?>g: <?php echo $packagePrices[$day]; ?></span>
-                                    <?php endif; ?>
-                                    <?php endforeach; ?>
-                                </div>
-                            </div>
-                            <div class="bg-black bg-opacity-50 rounded p-2">
-                                <small class="text-muted d-block">Domainler:</small>
-                                <span class="badge bg-info"><?php echo count($domains); ?> adet</span>
-                            </div>
-                        </div>
-                        
-                        <div class="col-md-3 text-end">
-                            <button class="btn btn-outline-info btn-sm mb-2 w-100" data-bs-toggle="modal" data-bs-target="#domainsModal<?php echo $script['id']; ?>">
-                                <i class="bi bi-globe me-1"></i>Domainler
+    <div class="table-responsive">
+        <table class="admin-table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Script</th>
+                    <th>Kategori</th>
+                    <th>Paket</th>
+                    <th>SSH</th>
+                    <th>Kiralama</th>
+                    <th>Durum</th>
+                    <th>İşlem</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($scripts as $s): ?>
+                <tr>
+                    <td>#<?php echo $s['id']; ?></td>
+                    <td>
+                        <strong><?php echo htmlspecialchars($s['name'] ?? ''); ?></strong>
+                        <div class="small text-muted"><?php echo htmlspecialchars($s['slug'] ?? ''); ?></div>
+                    </td>
+                    <td><?php echo $s['category_name'] ? htmlspecialchars($s['category_name']) : '<span class="text-muted">-</span>'; ?></td>
+                    <td><span class="badge bg-info"><?php echo $s['package_count']; ?> paket</span></td>
+                    <td>
+                        <?php if ($s['ssh_host']): ?>
+                            <span class="badge bg-success"><i class="bi bi-server"></i> <?php echo htmlspecialchars($s['ssh_host']); ?></span>
+                        <?php else: ?>
+                            <span class="badge bg-secondary">Yok</span>
+                        <?php endif; ?>
+                    </td>
+                    <td><span class="badge bg-primary"><?php echo $s['active_rentals']; ?> aktif</span></td>
+                    <td>
+                        <span class="badge bg-<?php echo $s['status'] == 'active' ? 'success' : 'secondary'; ?>">
+                            <?php echo $s['status'] == 'active' ? 'Aktif' : 'Pasif'; ?>
+                        </span>
+                    </td>
+                    <td>
+                        <div class="btn-group">
+                            <button class="btn btn-sm btn-info me-1" data-bs-toggle="modal" data-bs-target="#editModal<?php echo $s['id']; ?>">
+                                <i class="bi bi-pencil"></i> Düzenle
                             </button>
-                            <button class="btn btn-outline-primary btn-sm mb-2 w-100" data-bs-toggle="modal" data-bs-target="#editModal<?php echo $script['id']; ?>">
-                                <i class="bi bi-pencil me-1"></i>Düzenle
+                            <button class="btn btn-sm btn-warning me-1" data-bs-toggle="modal" data-bs-target="#packagesModal<?php echo $s['id']; ?>">
+                                <i class="bi bi-box-seam"></i> Paketler
                             </button>
-                            <form method="POST" class="d-inline" onsubmit="return confirm('Script ve tüm verileri silinecek. Emin misiniz?')">
+                            <form method="POST" class="d-inline">
+                                <input type="hidden" name="csrf_token" value="<?php echo $csrfToken; ?>">
+                                <input type="hidden" name="action" value="toggle_status">
+                                <input type="hidden" name="script_id" value="<?php echo $s['id']; ?>">
+                                <button type="submit" class="btn btn-sm btn-<?php echo $s['status'] == 'active' ? 'secondary' : 'success'; ?> me-1">
+                                    <?php echo $s['status'] == 'active' ? 'Pasif' : 'Aktif'; ?>
+                                </button>
+                            </form>
+                            <form method="POST" class="d-inline" onsubmit="return confirm('Bu scripti silmek istediğinize emin misiniz?');">
                                 <input type="hidden" name="csrf_token" value="<?php echo $csrfToken; ?>">
                                 <input type="hidden" name="action" value="delete">
-                                <input type="hidden" name="script_id" value="<?php echo $script['id']; ?>">
-                                <button type="submit" class="btn btn-outline-danger btn-sm w-100">
-                                    <i class="bi bi-trash me-1"></i>Sil
+                                <input type="hidden" name="script_id" value="<?php echo $s['id']; ?>">
+                                <button type="submit" class="btn btn-sm btn-danger" <?php echo $s['active_rentals'] > 0 ? 'disabled' : ''; ?>>
+                                    <i class="bi bi-trash"></i>
                                 </button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                
+                <!-- Edit Modal -->
+                <div class="modal fade" id="editModal<?php echo $s['id']; ?>" tabindex="-1">
+                    <div class="modal-dialog modal-lg">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title">Script Düzenle: <?php echo htmlspecialchars($s['name'] ?? ''); ?></h5>
+                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                            </div>
+                            <form method="POST">
+                                <div class="modal-body">
+                                    <input type="hidden" name="csrf_token" value="<?php echo $csrfToken; ?>">
+                                    <input type="hidden" name="action" value="edit">
+                                    <input type="hidden" name="script_id" value="<?php echo $s['id']; ?>">
+                                    
+                                    <div class="row">
+                                        <div class="col-md-6 mb-3">
+                                            <label class="form-label">Script Adı *</label>
+                                            <input type="text" name="name" class="form-control form-control-dark" value="<?php echo htmlspecialchars($s['name'] ?? ''); ?>" required>
+                                        </div>
+                                        <div class="col-md-6 mb-3">
+                                            <label class="form-label">Kategori</label>
+                                            <select name="category_id" class="form-select form-control-dark">
+                                                <option value="">Kategori Seçin</option>
+                                                <?php foreach ($categories as $c): ?>
+                                                <option value="<?php echo $c['id']; ?>" <?php echo $s['category_id'] == $c['id'] ? 'selected' : ''; ?>>
+                                                    <?php echo htmlspecialchars($c['name']); ?>
+                                                </option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="mb-3">
+                                        <label class="form-label">Açıklama</label>
+                                        <textarea name="description" class="form-control form-control-dark" rows="3"><?php echo htmlspecialchars($s['description'] ?? ''); ?></textarea>
+                                    </div>
+                                    
+                                    <div class="mb-3">
+                                        <label class="form-label">Görsel URL</label>
+                                        <input type="text" name="image" class="form-control form-control-dark" value="<?php echo htmlspecialchars($s['image'] ?? ''); ?>">
+                                    </div>
+                                    
+                                    <div class="mb-3">
+                                        <label class="form-label">Durum</label>
+                                        <select name="status" class="form-select form-control-dark">
+                                            <option value="active" <?php echo $s['status'] == 'active' ? 'selected' : ''; ?>>Aktif</option>
+                                            <option value="inactive" <?php echo $s['status'] == 'inactive' ? 'selected' : ''; ?>>Pasif</option>
+                                            <option value="maintenance" <?php echo $s['status'] == 'maintenance' ? 'selected' : ''; ?>>Bakımda</option>
+                                        </select>
+                                    </div>
+                                    
+                                    <hr class="border-secondary my-4">
+                                    <h6 class="text-warning mb-3"><i class="bi bi-server"></i> SSH Bağlantı Ayarları</h6>
+                                    
+                                    <div class="row">
+                                        <div class="col-md-6 mb-3">
+                                            <label class="form-label">SSH Host</label>
+                                            <input type="text" name="ssh_host" class="form-control form-control-dark" value="<?php echo htmlspecialchars($s['ssh_host'] ?? ''); ?>" placeholder="örn: 192.168.1.100 veya sunucu.com">
+                                        </div>
+                                        <div class="col-md-6 mb-3">
+                                            <label class="form-label">SSH Port</label>
+                                            <input type="number" name="ssh_port" class="form-control form-control-dark" value="<?php echo $s['ssh_port'] ?? 22; ?>">
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="row">
+                                        <div class="col-md-6 mb-3">
+                                            <label class="form-label">SSH Kullanıcı</label>
+                                            <input type="text" name="ssh_user" class="form-control form-control-dark" value="<?php echo htmlspecialchars($s['ssh_user'] ?? ''); ?>" placeholder="root">
+                                        </div>
+                                        <div class="col-md-6 mb-3">
+                                            <label class="form-label">SSH Şifre (veya Key kullanın)</label>
+                                            <input type="password" name="ssh_pass" class="form-control form-control-dark" value="<?php echo htmlspecialchars($s['ssh_pass'] ?? ''); ?>" placeholder="Değiştirmek için yazın">
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="mb-3">
+                                        <label class="form-label">SSH Key Path (Önerilen)</label>
+                                        <input type="text" name="ssh_key_path" class="form-control form-control-dark" value="<?php echo htmlspecialchars($s['ssh_key_path'] ?? ''); ?>" placeholder="/home/user/.ssh/id_rsa">
+                                        <div class="form-text text-muted">Şifre yerine SSH key kullanmak daha güvenlidir</div>
+                                    </div>
+                                    
+                                    <div class="mb-3">
+                                        <label class="form-label">Kurulum Komutu</label>
+                                        <textarea name="setup_command" class="form-control form-control-dark" rows="3" placeholder="cd /var/www && git pull origin master"><?php echo htmlspecialchars($s['setup_command'] ?? ''); ?></textarea>
+                                    </div>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+                                    <button type="submit" class="btn btn-primary">Kaydet</button>
+                                </div>
                             </form>
                         </div>
                     </div>
                 </div>
-            </div>
-        </div>
-
-        <!-- Domain Yönetimi Modal -->
-        <div class="modal fade" id="domainsModal<?php echo $script['id']; ?>" tabindex="-1">
-            <div class="modal-dialog modal-lg">
-                <div class="modal-content bg-dark">
-                    <div class="modal-header border-secondary">
-                        <h5 class="modal-title text-white"><?php echo $script['name']; ?> - Domain Yönetimi</h5>
-                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                    </div>
-                    <div class="modal-body">
-                        <!-- Domain Ekle -->
-                        <form method="POST" class="row g-2 mb-4">
-                            <input type="hidden" name="csrf_token" value="<?php echo $csrfToken; ?>">
-                            <input type="hidden" name="action" value="add_domain">
-                            <input type="hidden" name="script_id" value="<?php echo $script['id']; ?>">
-                            <div class="col-md-8">
-                                <input type="text" name="domain" class="form-control bg-dark text-white border-secondary" placeholder="ornek.com" required>
+                
+                <!-- Packages Modal -->
+                <div class="modal fade" id="packagesModal<?php echo $s['id']; ?>" tabindex="-1">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title">Paket Yönetimi: <?php echo htmlspecialchars($s['name'] ?? ''); ?></h5>
+                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                             </div>
-                            <div class="col-md-4">
-                                <button type="submit" class="btn btn-success w-100"><i class="bi bi-plus-lg me-1"></i>Domain Ekle</button>
-                            </div>
-                        </form>
-                        
-                        <!-- Domain Listesi -->
-                        <div class="table-responsive">
-                            <table class="table table-dark table-sm table-hover">
-                                <thead>
-                                    <tr>
-                                        <th>Domain</th>
-                                        <th>Durum</th>
-                                        <th>Kullanıcı</th>
-                                        <th>İşlem</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <?php foreach ($domains as $domain): 
-                                        $domainUser = $domain['current_user_id'] ? $db->fetch("SELECT username FROM users WHERE id = ?", [$domain['current_user_id']]) : null;
+                            <form method="POST">
+                                <div class="modal-body">
+                                    <input type="hidden" name="csrf_token" value="<?php echo $csrfToken; ?>">
+                                    <input type="hidden" name="action" value="update_packages">
+                                    <input type="hidden" name="script_id" value="<?php echo $s['id']; ?>">
+                                    
+                                    <?php
+                                    $packages = $db->fetchAll("SELECT * FROM script_packages WHERE script_id = ? ORDER BY duration_days", [$s['id']]);
+                                    if (empty($packages)) $packages = [['duration_days' => 30, 'price_usdt' => 0, 'is_default' => 1]];
                                     ?>
-                                    <tr>
-                                        <td><code class="text-info"><?php echo $domain['domain']; ?></code></td>
-                                        <td>
-                                            <span class="badge bg-<?php echo $domain['status'] == 'available' ? 'success' : ($domain['status'] == 'in_use' ? 'warning' : 'danger'); ?>">
-                                                <?php echo $domain['status']; ?>
-                                            </span>
-                                        </td>
-                                        <td><?php echo $domainUser['username'] ?? '-'; ?></td>
-                                        <td>
-                                            <?php if ($domain['status'] != 'in_use'): ?>
-                                            <form method="POST" class="d-inline" onsubmit="return confirm('Domain silinecek?')">
-                                                <input type="hidden" name="csrf_token" value="<?php echo $csrfToken; ?>">
-                                                <input type="hidden" name="action" value="delete_domain">
-                                                <input type="hidden" name="domain_id" value="<?php echo $domain['id']; ?>">
-                                                <button type="submit" class="btn btn-sm btn-danger"><i class="bi bi-trash"></i></button>
-                                            </form>
-                                            <?php else: ?>
-                                            <button class="btn btn-sm btn-secondary" disabled><i class="bi bi-lock"></i></button>
-                                            <?php endif; ?>
-                                        </td>
-                                    </tr>
-                                    <?php endforeach; ?>
-                                    <?php if (empty($domains)): ?>
-                                    <tr><td colspan="4" class="text-center text-muted">Henüz domain eklenmemiş</td></tr>
-                                    <?php endif; ?>
-                                </tbody>
-                            </table>
+                                    
+                                    <div id="packageContainer<?php echo $s['id']; ?>">
+                                        <?php foreach ($packages as $i => $pkg): ?>
+                                        <div class="row package-row mb-3">
+                                            <div class="col-4">
+                                                <input type="number" name="packages[<?php echo $i; ?>][days]" class="form-control form-control-dark" value="<?php echo $pkg['duration_days']; ?>" placeholder="Gün" required>
+                                            </div>
+                                            <div class="col-4">
+                                                <input type="number" name="packages[<?php echo $i; ?>][price]" class="form-control form-control-dark" step="0.01" value="<?php echo $pkg['price_usdt']; ?>" placeholder="Fiyat" required>
+                                            </div>
+                                            <div class="col-3">
+                                                <div class="form-check mt-2">
+                                                    <input type="checkbox" name="packages[<?php echo $i; ?>][default]" class="form-check-input" value="1" <?php echo $pkg['is_default'] ? 'checked' : ''; ?>>
+                                                    <label class="form-check-label text-white-50">Varsayılan</label>
+                                                </div>
+                                            </div>
+                                            <div class="col-1">
+                                                <button type="button" class="btn btn-sm btn-danger" onclick="this.closest('.package-row').remove()">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                    
+                                    <button type="button" class="btn btn-sm btn-success w-100" onclick="addPackage<?php echo $s['id']; ?>()">
+                                        <i class="bi bi-plus-lg"></i> Paket Ekle
+                                    </button>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+                                    <button type="submit" class="btn btn-warning">Paketleri Kaydet</button>
+                                </div>
+                            </form>
                         </div>
                     </div>
                 </div>
-            </div>
-        </div>
-
-        <!-- Düzenle Modal -->
-        <div class="modal fade" id="editModal<?php echo $script['id']; ?>" tabindex="-1">
-            <div class="modal-dialog modal-xl">
-                <div class="modal-content bg-dark">
-                    <div class="modal-header border-secondary">
-                        <h5 class="modal-title text-white">Script Düzenle</h5>
-                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                    </div>
-                    <form method="POST" enctype="multipart/form-data">
-                        <div class="modal-body">
-                            <input type="hidden" name="csrf_token" value="<?php echo $csrfToken; ?>">
-                            <input type="hidden" name="action" value="edit">
-                            <input type="hidden" name="script_id" value="<?php echo $script['id']; ?>">
-                            
-                            <div class="row g-4">
-                                <div class="col-md-6">
-                                    <div class="mb-3">
-                                        <label class="form-label text-white">Script Adı</label>
-                                        <input type="text" name="name" class="form-control bg-dark text-white border-secondary" value="<?php echo $script['name']; ?>" required>
-                                    </div>
-                                    
-                                    <div class="mb-3">
-                                        <label class="form-label text-white">Açıklama</label>
-                                        <textarea name="description" class="form-control bg-dark text-white border-secondary" rows="3"><?php echo $script['description']; ?></textarea>
-                                    </div>
-                                    
-                                    <div class="mb-3">
-                                        <label class="form-label text-white">Yeni Fotoğraf (Boş = Değiştirme)</label>
-                                        <input type="file" name="image" class="form-control bg-dark text-white border-secondary" accept="image/*">
-                                    </div>
-                                    
-                                    <div class="mb-3">
-                                        <label class="form-label text-white">Durum</label>
-                                        <select name="status" class="form-select bg-dark text-white border-secondary">
-                                            <option value="active" <?php echo $script['status'] == 'active' ? 'selected' : ''; ?>>Aktif</option>
-                                            <option value="inactive" <?php echo $script['status'] == 'inactive' ? 'selected' : ''; ?>>Pasif</option>
-                                            <option value="maintenance" <?php echo $script['status'] == 'maintenance' ? 'selected' : ''; ?>>Bakım</option>
-                                        </select>
-                                    </div>
-                                </div>
-                                
-                                <div class="col-md-6">
-                                    <div class="mb-3">
-                                        <label class="form-label text-white">SSH Host</label>
-                                        <input type="text" name="ssh_host" class="form-control bg-dark text-white border-secondary" value="<?php echo $script['ssh_host']; ?>">
-                                    </div>
-                                    
-                                    <div class="mb-3">
-                                        <label class="form-label text-white">SSH Kullanıcı</label>
-                                        <input type="text" name="ssh_user" class="form-control bg-dark text-white border-secondary" value="<?php echo $script['ssh_user']; ?>">
-                                    </div>
-                                    
-                                    <div class="mb-3">
-                                        <label class="form-label text-white">SSH Şifre (Boş = Değiştirme)</label>
-                                        <input type="password" name="ssh_pass" class="form-control bg-dark text-white border-secondary" placeholder="••••••">
-                                    </div>
-                                    
-                                    <div class="mb-3">
-                                        <label class="form-label text-white">Kurulum Komutu</label>
-                                        <textarea name="setup_command" class="form-control bg-dark text-white border-secondary font-monospace small" rows="2"><?php echo $script['setup_command']; ?></textarea>
-                                        <small class="text-muted">{DOMAIN} {USER_ID} {DURATION}</small>
-                                    </div>
+                
+                <script>
+                function addPackage<?php echo $s['id']; ?>() {
+                    const container = document.getElementById('packageContainer<?php echo $s['id']; ?>');
+                    const index = container.children.length;
+                    const html = `
+                        <div class="row package-row mb-3">
+                            <div class="col-4">
+                                <input type="number" name="packages[${index}][days]" class="form-control form-control-dark" placeholder="Gün" required>
+                            </div>
+                            <div class="col-4">
+                                <input type="number" name="packages[${index}][price]" class="form-control form-control-dark" step="0.01" placeholder="Fiyat" required>
+                            </div>
+                            <div class="col-3">
+                                <div class="form-check mt-2">
+                                    <input type="checkbox" name="packages[${index}][default]" class="form-check-input" value="1">
+                                    <label class="form-check-label text-white-50">Varsayılan</label>
                                 </div>
                             </div>
-                            
-                            <hr class="border-secondary">
-                            
-                            <h6 class="text-white mb-3">Paket Fiyatları (USDT)</h6>
-                            <div class="row g-3">
-                                <?php foreach ([1 => '1 Gün', 3 => '3 Gün', 7 => '7 Gün', 30 => '30 Gün'] as $day => $label): ?>
-                                <div class="col-md-3">
-                                    <label class="form-label text-muted small"><?php echo $label; ?></label>
-                                    <input type="number" name="price_<?php echo $day; ?>day" class="form-control bg-dark text-white border-secondary" 
-                                           value="<?php echo $packagePrices[$day] ?? ''; ?>" step="0.01" min="0" placeholder="0.00">
-                                </div>
-                                <?php endforeach; ?>
+                            <div class="col-1">
+                                <button type="button" class="btn btn-sm btn-danger" onclick="this.closest('.package-row').remove()">
+                                    <i class="bi bi-trash"></i>
+                                </button>
                             </div>
                         </div>
-                        <div class="modal-footer border-secondary">
-                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
-                            <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Kaydet</button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-        </div>
-        <?php endforeach; ?>
+                    `;
+                    container.insertAdjacentHTML('beforeend', html);
+                }
+                </script>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
     </div>
 </div>
 
-<!-- Yeni Script Modal -->
+<!-- Add Script Modal -->
 <div class="modal fade" id="addScriptModal" tabindex="-1">
-    <div class="modal-dialog modal-xl">
-        <div class="modal-content bg-dark">
-            <div class="modal-header border-secondary">
-                <h5 class="modal-title text-white">Yeni Script Ekle</h5>
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Yeni Script Ekle</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
-            <form method="POST" enctype="multipart/form-data">
+            <form method="POST">
                 <div class="modal-body">
                     <input type="hidden" name="csrf_token" value="<?php echo $csrfToken; ?>">
                     <input type="hidden" name="action" value="add">
                     
-                    <div class="row g-4">
-                        <div class="col-md-6">
-                            <div class="mb-3">
-                                <label class="form-label text-white">Script Adı <span class="text-danger">*</span></label>
-                                <input type="text" name="name" class="form-control bg-dark text-white border-secondary" required>
-                            </div>
-                            
-                            <div class="mb-3">
-                                <label class="form-label text-white">Açıklama</label>
-                                <textarea name="description" class="form-control bg-dark text-white border-secondary" rows="3"></textarea>
-                            </div>
-                            
-                            <div class="mb-3">
-                                <label class="form-label text-white">Fotoğraf</label>
-                                <input type="file" name="image" class="form-control bg-dark text-white border-secondary" accept="image/*">
-                            </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Script Adı *</label>
+                            <input type="text" name="name" class="form-control form-control-dark" required>
                         </div>
-                        
-                        <div class="col-md-6">
-                            <div class="mb-3">
-                                <label class="form-label text-white">SSH Host</label>
-                                <input type="text" name="ssh_host" class="form-control bg-dark text-white border-secondary">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Kategori</label>
+                            <select name="category_id" class="form-select form-control-dark">
+                                <option value="">Kategori Seçin</option>
+                                <?php foreach ($categories as $c): ?>
+                                <option value="<?php echo $c['id']; ?>"><?php echo htmlspecialchars($c['name']); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Açıklama</label>
+                        <textarea name="description" class="form-control form-control-dark" rows="3"></textarea>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Görsel URL</label>
+                        <input type="text" name="image" class="form-control form-control-dark" placeholder="https://...">
+                    </div>
+                    
+                    <hr class="border-secondary my-4">
+                    <h6 class="text-warning mb-3"><i class="bi bi-server"></i> SSH Bağlantı Ayarları</h6>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">SSH Host</label>
+                            <input type="text" name="ssh_host" class="form-control form-control-dark" placeholder="örn: 192.168.1.100">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">SSH Port</label>
+                            <input type="number" name="ssh_port" class="form-control form-control-dark" value="22">
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">SSH Kullanıcı</label>
+                            <input type="text" name="ssh_user" class="form-control form-control-dark" placeholder="root">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">SSH Şifre</label>
+                            <input type="password" name="ssh_pass" class="form-control form-control-dark">
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">SSH Key Path</label>
+                        <input type="text" name="ssh_key_path" class="form-control form-control-dark" placeholder="/home/user/.ssh/id_rsa">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Kurulum Komutu</label>
+                        <textarea name="setup_command" class="form-control form-control-dark" rows="3" placeholder="cd /var/www && git pull origin master"></textarea>
+                    </div>
+                    
+                    <hr class="border-secondary my-4">
+                    <h6 class="text-info mb-3"><i class="bi bi-box-seam"></i> Paketler (Fiyatlandırma)</h6>
+                    
+                    <div id="newPackageContainer">
+                        <div class="row package-row mb-3">
+                            <div class="col-4">
+                                <input type="number" name="packages[0][days]" class="form-control form-control-dark" placeholder="Gün (örn: 30)" required>
                             </div>
-                            
-                            <div class="mb-3">
-                                <label class="form-label text-white">SSH Kullanıcı</label>
-                                <input type="text" name="ssh_user" class="form-control bg-dark text-white border-secondary">
+                            <div class="col-4">
+                                <input type="number" name="packages[0][price]" class="form-control form-control-dark" step="0.01" placeholder="Fiyat (USDT)" required>
                             </div>
-                            
-                            <div class="mb-3">
-                                <label class="form-label text-white">SSH Şifre</label>
-                                <input type="password" name="ssh_pass" class="form-control bg-dark text-white border-secondary">
+                            <div class="col-3">
+                                <div class="form-check mt-2">
+                                    <input type="checkbox" name="packages[0][default]" class="form-check-input" value="1" checked>
+                                    <label class="form-check-label text-white-50">Varsayılan</label>
+                                </div>
                             </div>
-                            
-                            <div class="mb-3">
-                                <label class="form-label text-white">Kurulum Komutu</label>
-                                <textarea name="setup_command" class="form-control bg-dark text-white border-secondary font-monospace small" rows="2" placeholder="{DOMAIN} {USER_ID} {DURATION}"></textarea>
+                            <div class="col-1">
+                                <button type="button" class="btn btn-sm btn-danger" onclick="this.closest('.package-row').remove()">
+                                    <i class="bi bi-trash"></i>
+                                </button>
                             </div>
                         </div>
                     </div>
                     
-                    <hr class="border-secondary">
-                    
-                    <h6 class="text-white mb-3">Paket Fiyatları (USDT) <span class="text-muted small">- En az birini doldurun</span></h6>
-                    <div class="row g-3">
-                        <div class="col-md-3">
-                            <label class="form-label text-muted small">1 Gün</label>
-                            <input type="number" name="price_1day" class="form-control bg-dark text-white border-secondary" step="0.01" min="0" placeholder="0.00">
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label text-muted small">3 Gün</label>
-                            <input type="number" name="price_3day" class="form-control bg-dark text-white border-secondary" step="0.01" min="0" placeholder="0.00">
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label text-muted small">7 Gün</label>
-                            <input type="number" name="price_7day" class="form-control bg-dark text-white border-secondary" step="0.01" min="0" placeholder="0.00">
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label text-muted small">30 Gün</label>
-                            <input type="number" name="price_30day" class="form-control bg-dark text-white border-secondary" step="0.01" min="0" placeholder="0.00">
-                        </div>
-                    </div>
+                    <button type="button" class="btn btn-sm btn-success w-100 mb-3" onclick="addNewPackage()">
+                        <i class="bi bi-plus-lg"></i> Paket Ekle
+                    </button>
                 </div>
-                <div class="modal-footer border-secondary">
+                <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
-                    <button type="submit" class="btn btn-success"><i class="bi bi-plus-lg me-1"></i>Ekle</button>
+                    <button type="submit" class="btn btn-success">Script Ekle</button>
                 </div>
             </form>
         </div>
     </div>
 </div>
+
+<script>
+function addNewPackage() {
+    const container = document.getElementById('newPackageContainer');
+    const index = container.children.length;
+    const html = `
+        <div class="row package-row mb-3">
+            <div class="col-4">
+                <input type="number" name="packages[${index}][days]" class="form-control form-control-dark" placeholder="Gün" required>
+            </div>
+            <div class="col-4">
+                <input type="number" name="packages[${index}][price]" class="form-control form-control-dark" step="0.01" placeholder="Fiyat" required>
+            </div>
+            <div class="col-3">
+                <div class="form-check mt-2">
+                    <input type="checkbox" name="packages[${index}][default]" class="form-check-input" value="1">
+                    <label class="form-check-label text-white-50">Varsayılan</label>
+                </div>
+            </div>
+            <div class="col-1">
+                <button type="button" class="btn btn-sm btn-danger" onclick="this.closest('.package-row').remove()">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </div>
+        </div>
+    `;
+    container.insertAdjacentHTML('beforeend', html);
+}
+</script>
 
 <?php require 'templates/footer.php'; ?>

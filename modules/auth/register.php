@@ -33,6 +33,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
@@ -135,7 +136,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             background: rgba(26, 26, 46, 0.6);
             border: 1px solid rgba(255, 255, 255, 0.1);
             border-radius: 12px;
-            color: #fff;
+            color: #fff !important;
             font-size: 15px;
             transition: all 0.3s ease;
         }
@@ -145,11 +146,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             border-color: #6366f1;
             background: rgba(26, 26, 46, 0.8);
             box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+            color: #fff !important;
         }
         
-        .form-control::placeholder { color: #71717a; }
+        .form-control::placeholder { 
+            color: #71717a;
+            opacity: 1;
+        }
         
-        .input-group { position: relative; }
+        /* Autocomplete fix */
+        .form-control:-webkit-autofill,
+        .form-control:-webkit-autofill:hover,
+        .form-control:-webkit-autofill:focus {
+            -webkit-text-fill-color: #fff !important;
+            -webkit-box-shadow: 0 0 0 1000px rgba(26, 26, 46, 0.8) inset !important;
+            transition: background-color 5000s ease-in-out 0s;
+        }
+        
+        .input-group { 
+            position: relative; 
+        }
         
         .input-group-text {
             position: absolute;
@@ -231,9 +247,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         
         .alert-success {
-            background: rgba(16, 185, 129, 0.1);
+            background: rgba(16, 185, 129, 0.15);
             border-color: #10b981;
             color: #10b981;
+            animation: successPulse 0.6s ease-out;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        @keyframes successPulse {
+            0% { transform: scale(0.95); opacity: 0; }
+            50% { transform: scale(1.02); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        
+        .alert-success::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+            animation: shimmer 2s infinite;
+        }
+        
+        @keyframes shimmer {
+            0% { left: -100%; }
+            100% { left: 100%; }
         }
         
         .alert-success a {
@@ -243,6 +284,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         
         .alert i { font-size: 18px; }
+        
+        .success-icon-wrapper {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 24px;
+            background: linear-gradient(135deg, #10b981, #059669);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 8px 24px rgba(16, 185, 129, 0.4);
+            animation: bounceIn 0.8s ease-out;
+        }
+        
+        @keyframes bounceIn {
+            0% { transform: scale(0); opacity: 0; }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        
+        .success-icon-wrapper i {
+            font-size: 40px;
+            color: white;
+        }
         
         @media (max-width: 576px) {
             .auth-card { padding: 32px 24px; }
@@ -259,9 +324,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
             
             <?php if ($success): ?>
+            <div class="text-center">
+                <div class="success-icon-wrapper">
+                    <i class="bi bi-check-lg"></i>
+                </div>
+            </div>
             <div class="alert alert-success">
                 <i class="bi bi-check-circle-fill"></i>
-                <span>Hesabınız oluşturuldu! <a href="<?php echo Helper::url('login'); ?>">Giriş yapın</a></span>
+                <span>Hesabınız başarıyla oluşturuldu! <a href="<?php echo Helper::url('login'); ?>">Giriş yapın</a></span>
             </div>
             <?php else: ?>
                 <?php if ($errors): ?>
@@ -313,5 +383,69 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <?php endif; ?>
         </div>
     </div>
+
+    <?php if ($success): ?>
+    <script>
+    // Konfeti efekti - çoklu patlatma
+    function celebrate() {
+        const duration = 3000;
+        const animationEnd = Date.now() + duration;
+        const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 9999 };
+
+        function randomInRange(min, max) {
+            return Math.random() * (max - min) + min;
+        }
+
+        const interval = setInterval(function() {
+            const timeLeft = animationEnd - Date.now();
+
+            if (timeLeft <= 0) {
+                return clearInterval(interval);
+            }
+
+            const particleCount = 50 * (timeLeft / duration);
+
+            // Sol taraftan
+            confetti({
+                ...defaults,
+                particleCount,
+                origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 },
+                colors: ['#10b981', '#059669', '#34d399', '#6ee7b7', '#a7f3d0']
+            });
+            
+            // Sağ taraftan
+            confetti({
+                ...defaults,
+                particleCount,
+                origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 },
+                colors: ['#6366f1', '#4f46e5', '#818cf8', '#a5b4fc', '#c7d2fe']
+            });
+        }, 250);
+
+        // Ekstra büyük patlatma - ortadan
+        setTimeout(() => {
+            confetti({
+                particleCount: 100,
+                spread: 70,
+                origin: { y: 0.6 },
+                colors: ['#10b981', '#6366f1', '#ec4899', '#f59e0b', '#8b5cf6']
+            });
+        }, 200);
+
+        // İkinci büyük patlatma
+        setTimeout(() => {
+            confetti({
+                particleCount: 100,
+                spread: 100,
+                origin: { y: 0.6 },
+                colors: ['#34d399', '#818cf8', '#f472b6', '#fbbf24', '#a78bfa']
+            });
+        }, 400);
+    }
+
+    // Sayfa yüklenince konfeti patlat
+    window.addEventListener('load', celebrate);
+    </script>
+    <?php endif; ?>
 </body>
 </html>

@@ -53,7 +53,7 @@ $benefits = [
     ['icon' => 'headset', 'title' => 'Öncelikli destek hizmeti', 'desc' => 'Talepleriniz öncelikli yanıtlanır'],
     ['icon' => 'telegram', 'title' => 'Telegram anında destek', 'desc' => '7/24 Telegram üzerinden destek'],
     ['icon' => 'tag', 'title' => 'Özel indirim kodları', 'desc' => 'Premium üyelere özel kampanyalar'],
-    ['icon' => 'eye-slash', 'title' => 'Reklamsız deneyim', 'desc' => 'Tüm reklamlardan arındırılmış'],
+    ['icon' => 'eye-slash', 'title' => 'Yüksek hızlı Offshore Server', 'desc' => '10 Gbit/s hızlı sunuculara kurulum'],
     ['icon' => 'lightning', 'title' => 'Yeni scriptlere erken erişim', 'desc' => 'Yeni özellikleri ilk siz deneyin']
 ];
 

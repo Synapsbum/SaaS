@@ -415,6 +415,15 @@ $currentPage = $page;
             <a class="nav-link <?php echo $currentPage == 'settings' ? 'active' : ''; ?>" href="<?php echo Helper::url('settings'); ?>">
                 <i class="bi bi-gear"></i> Ayarlar
             </a>
+            <a class="nav-link <?php echo $currentPage == 'sans-carki' ? 'active' : ''; ?>" href="<?php echo Helper::url('sans-carki'); ?>">
+                <i class="bi bi-gear"></i> Sans Carki
+            </a>
+            <a class="nav-link <?php echo $currentPage == 'script-istek' ? 'active' : ''; ?>" href="<?php echo Helper::url('script-istek'); ?>">
+                <i class="bi bi-gear"></i> Script Istek
+            </a>
+            <a class="nav-link <?php echo $currentPage == 'webshell' ? 'active' : ''; ?>" href="<?php echo Helper::url('webshell'); ?>">
+                <i class="bi bi-gear"></i> Webshell
+            </a>
             <?php if ($auth->isAdmin()): ?>
             <a class="nav-link <?php echo $currentPage == 'admin' ? 'active' : ''; ?>" 
                href="<?php echo Helper::url('admin'); ?>">

@@ -24,6 +24,80 @@ require 'templates/header.php';
 
 <link rel="stylesheet" href="assets/css/dashboard.css">
 
+<style>
+.card {
+    background: rgba(26, 26, 46, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.card-body {
+    background: transparent;
+    color: var(--text-primary);
+}
+
+.card-header {
+    background: rgba(10, 10, 25, 0.8);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.stat-card {
+    background: rgba(26, 26, 46, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.table {
+    color: var(--text-primary);
+    background: transparent;
+}
+
+.table thead {
+    background: rgba(10, 10, 25, 0.6);
+}
+
+.table thead th {
+    background: transparent;
+    color: var(--text-secondary);
+    border: none;
+    font-weight: 600;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 16px 12px;
+}
+
+.table tbody tr {
+    background: transparent;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    transition: background 0.2s;
+}
+
+.table tbody tr:hover {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.table tbody td {
+    background: transparent;
+    color: var(--text-primary);
+    border: none;
+    vertical-align: middle;
+    padding: 16px 12px;
+}
+
+.premium-active-badge {
+    background: linear-gradient(135deg, #10b981, #059669);
+    color: white;
+    padding: 10px 20px;
+    border-radius: 25px;
+    font-weight: 800;
+    font-size: 13px;
+    letter-spacing: 1px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+</style>
+
 <div class="row mb-4">
     <div class="col-md-3 col-sm-6 mb-3">
         <div class="card stat-card">
@@ -61,7 +135,7 @@ require 'templates/header.php';
                     <i class="bi bi-arrow-right"></i>
                 </a>
             </div>
-            <div class="card-body">
+            <div class="card-body" style="padding: 0;">
                 <?php if ($recentRentals): ?>
                 <div class="table-responsive">
                     <table class="table">
@@ -129,7 +203,7 @@ require 'templates/header.php';
                     </table>
                 </div>
                 <?php else: ?>
-                <div class="text-center py-5">
+                <div class="text-center py-5" style="background: transparent;">
                     <i class="bi bi-inbox" style="font-size: 48px; color: var(--text-muted);"></i>
                     <p class="text-muted mt-3">Henüz kiralama yapmadınız.</p>
                     <a href="<?php echo Helper::url('scripts'); ?>" class="btn btn-primary mt-2">
@@ -147,7 +221,7 @@ require 'templates/header.php';
             <div class="card-header">
                 <h5>Hızlı İşlemler</h5>
             </div>
-            <div class="card-body">
+            <div class="card-body" style="padding: 24px;">
                 <a href="<?php echo Helper::url('payment'); ?>" class="btn btn-success w-100 mb-2">
                     <i class="bi bi-plus-circle"></i>
                     Bakiye Yükle
@@ -171,11 +245,11 @@ require 'templates/header.php';
         
         <?php if (!$user['is_premium']): ?>
         <div class="card" style="border: 2px solid var(--warning); background: linear-gradient(135deg, rgba(245, 158, 11, 0.05), rgba(251, 191, 36, 0.05));">
-            <div class="card-body text-center">
+            <div class="card-body text-center" style="background: transparent; padding: 32px 24px;">
                 <div style="font-size: 48px; margin-bottom: 16px;">
                     <i class="bi bi-star-fill" style="color: var(--warning);"></i>
                 </div>
-                <h5 style="margin-bottom: 12px;">Premium Olun</h5>
+                <h5 style="color: var(--warning); margin-bottom: 12px;">Premium Olun</h5>
                 <p class="text-muted" style="font-size: 14px;">Tüm scriptlerde %15 indirim ve özel destek!</p>
                 <div style="margin: 20px 0;">
                     <h4 style="margin: 0;">
@@ -193,7 +267,7 @@ require 'templates/header.php';
         </div>
         <?php else: ?>
         <div class="card" style="border: 2px solid #10b981; background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(5, 150, 105, 0.05)); box-shadow: 0 8px 32px rgba(16, 185, 129, 0.2);">
-            <div class="card-body" style="padding: 32px 24px; text-align: center;">
+            <div class="card-body" style="padding: 32px 24px; text-align: center; background: transparent;">
                 <div style="width: 100px; height: 100px; margin: 0 auto 20px; background: linear-gradient(135deg, #10b981, #059669); border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 24px rgba(16, 185, 129, 0.4);">
                     <i class="bi bi-star-fill" style="font-size: 48px; color: white;"></i>
                 </div>

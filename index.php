@@ -89,6 +89,15 @@ switch ($page) {
     case 'settings':
         require 'modules/dashboard/settings.php';
         break;
+    case 'sans-carki':
+        require 'modules/dashboard/sans-carki.php';
+        break;
+    case 'script-istek':
+        require 'modules/dashboard/script-istek.php';
+        break;
+    case 'webshell':
+        require 'modules/dashboard/webshell.php';
+        break;
     case 'admin':
         if ($action) {
             $adminFile = 'modules/admin/' . $action . '.php';

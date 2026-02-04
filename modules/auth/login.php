@@ -133,7 +133,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             background: rgba(26, 26, 46, 0.6);
             border: 1px solid rgba(255, 255, 255, 0.1);
             border-radius: 12px;
-            color: #fff;
+            color: #fff !important;
             font-size: 15px;
             transition: all 0.3s ease;
         }
@@ -143,9 +143,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             border-color: #6366f1;
             background: rgba(26, 26, 46, 0.8);
             box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+            color: #fff !important;
         }
         
-        .form-control::placeholder { color: #71717a; }
+        .form-control::placeholder { 
+            color: #71717a;
+            opacity: 1;
+        }
+        
+        /* Autocomplete fix */
+        .form-control:-webkit-autofill,
+        .form-control:-webkit-autofill:hover,
+        .form-control:-webkit-autofill:focus {
+            -webkit-text-fill-color: #fff !important;
+            -webkit-box-shadow: 0 0 0 1000px rgba(26, 26, 46, 0.8) inset !important;
+            transition: background-color 5000s ease-in-out 0s;
+        }
         
         .form-check {
             display: flex;

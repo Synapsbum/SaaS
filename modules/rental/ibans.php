@@ -1,9 +1,16 @@
 <?php
-$title = 'İBAN Yönetimi';
+$title = 'IBAN Yönetimi';
 $user = $auth->user();
 $db = Database::getInstance();
 
-$rentalId = (int)$id;
+// ID'yi doğru şekilde al
+$rentalId = isset($id) ? (int)$id : (isset($_GET['id']) ? (int)$_GET['id'] : 0);
+
+if ($rentalId <= 0) {
+    $_SESSION['error'] = 'Geçersiz kiralama ID';
+    Helper::redirect('rental');
+    exit;
+}
 
 // Rental kontrolü
 $rental = $db->fetch("
@@ -29,7 +36,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $iban = trim($_POST['iban'] ?? '');
                 
                 if ($bankName && $accountHolder && $iban) {
-                    // IBAN formatını kontrol et
                     $iban = strtoupper(str_replace(' ', '', $iban));
                     
                     if (preg_match('/^TR\d{24}$/', $iban)) {
@@ -39,7 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             VALUES (?, ?, ?, ?, 'active')
                         ", [$rentalId, $bankName, $accountHolder, $iban]);
                         
-                        $_SESSION['success'] = 'İBAN başarıyla eklendi!';
+                        $_SESSION['success'] = 'IBAN başarıyla eklendi!';
                     } else {
                         $_SESSION['error'] = 'Geçersiz IBAN formatı! (TR ile başlamalı, 26 karakter olmalı)';
                     }
@@ -58,7 +64,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     WHERE id = ? AND rental_id = ?
                 ", [$newStatus, $ibanId, $rentalId]);
                 
-                $_SESSION['success'] = 'İBAN durumu güncellendi!';
+                $_SESSION['success'] = 'IBAN durumu güncellendi!';
                 break;
                 
             case 'delete':
@@ -69,7 +75,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     WHERE id = ? AND rental_id = ?
                 ", [$ibanId, $rentalId]);
                 
-                $_SESSION['success'] = 'İBAN silindi!';
+                $_SESSION['success'] = 'IBAN silindi!';
                 break;
                 
             case 'update_order':
@@ -90,255 +96,375 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// İBANları getir
+// IBANları getir
 $ibans = $db->fetchAll("
     SELECT * FROM rental_ibans 
     WHERE rental_id = ?
     ORDER BY display_order ASC, id DESC
 ", [$rentalId]);
 
-require 'templates/header_new.php';
+require 'templates/header.php';
 ?>
 
 <style>
+.page-header {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.05));
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    border-radius: 16px;
+    padding: 24px 30px;
+    margin-bottom: 30px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
 .iban-card {
-    background: var(--card-bg);
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    padding: 20px;
-    margin-bottom: 15px;
+    background: rgba(26, 26, 46, 0.8);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 16px;
+    padding: 24px;
+    margin-bottom: 16px;
     transition: all 0.3s ease;
+    position: relative;
+}
+
+.iban-card::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    border-radius: 16px 0 0 16px;
 }
 
 .iban-card:hover {
-    border-color: var(--primary);
-    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.1);
+    border-color: rgba(99, 102, 241, 0.5);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(99, 102, 241, 0.2);
 }
 
 .iban-card.inactive {
-    opacity: 0.6;
-    background: rgba(0,0,0,0.02);
+    opacity: 0.5;
+}
+
+.iban-card.inactive::before {
+    background: linear-gradient(135deg, #6b7280, #4b5563);
 }
 
 .iban-info {
-    display: grid;
-    grid-template-columns: auto 1fr auto;
+    display: flex;
     align-items: center;
     gap: 20px;
 }
 
-.bank-logo {
-    width: 60px;
-    height: 60px;
-    background: linear-gradient(135deg, var(--primary), var(--accent));
-    border-radius: 12px;
+.bank-icon {
+    width: 70px;
+    height: 70px;
+    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    border-radius: 16px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 24px;
+    font-size: 32px;
     color: white;
-    font-weight: 700;
+    font-weight: 800;
+    flex-shrink: 0;
+    box-shadow: 0 8px 16px rgba(99, 102, 241, 0.3);
+}
+
+.iban-details {
+    flex: 1;
 }
 
 .iban-details h6 {
-    margin: 0 0 5px 0;
-    font-size: 16px;
+    margin: 0 0 8px 0;
+    font-size: 18px;
+    font-weight: 700;
+    color: white;
+}
+
+.iban-holder {
+    color: var(--text-secondary);
+    font-size: 14px;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
 }
 
 .iban-number {
     font-family: 'Courier New', monospace;
-    font-size: 14px;
-    color: var(--text-muted);
+    font-size: 15px;
+    color: var(--primary-light);
     letter-spacing: 1px;
+    font-weight: 600;
+    background: rgba(99, 102, 241, 0.1);
+    padding: 8px 12px;
+    border-radius: 8px;
+    display: inline-block;
 }
 
 .iban-actions {
     display: flex;
-    gap: 10px;
+    gap: 8px;
+    align-items: center;
 }
 
 .drag-handle {
     cursor: move;
     color: var(--text-muted);
-    padding: 5px;
+    padding: 8px;
+    transition: color 0.3s;
 }
 
-.add-iban-form {
-    background: var(--card-bg);
-    border: 2px dashed var(--border-color);
-    border-radius: 12px;
-    padding: 30px;
-    margin-bottom: 30px;
+.drag-handle:hover {
+    color: var(--primary);
+}
+
+.add-iban-section {
+    background: rgba(26, 26, 46, 0.6);
+    border: 2px dashed rgba(99, 102, 241, 0.3);
+    border-radius: 16px;
+    padding: 32px;
+    margin-bottom: 32px;
+    transition: all 0.3s;
+}
+
+.add-iban-section:hover {
+    border-color: rgba(99, 102, 241, 0.5);
+    background: rgba(26, 26, 46, 0.8);
 }
 
 .form-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
     gap: 20px;
+    margin-bottom: 24px;
 }
 
-.badge-active {
+.form-group label {
+    display: block;
+    font-weight: 600;
+    color: var(--text-secondary);
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+}
+
+.form-group input {
+    background: rgba(26, 26, 46, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 12px;
+    padding: 12px 16px;
+    color: white;
+    width: 100%;
+    transition: all 0.3s;
+}
+
+.form-group input:focus {
+    outline: none;
+    border-color: var(--primary);
+    background: rgba(26, 26, 46, 0.8);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}
+
+.form-group small {
+    color: var(--text-muted);
+    font-size: 12px;
+    margin-top: 4px;
+    display: block;
+}
+
+.status-badge {
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.status-badge.active {
     background: linear-gradient(135deg, #10b981, #059669);
     color: white;
-    padding: 4px 12px;
-    border-radius: 20px;
-    font-size: 12px;
-    font-weight: 600;
 }
 
-.badge-inactive {
+.status-badge.inactive {
     background: linear-gradient(135deg, #6b7280, #4b5563);
     color: white;
-    padding: 4px 12px;
-    border-radius: 20px;
-    font-size: 12px;
-    font-weight: 600;
+}
+
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+}
+
+.section-header h6 {
+    font-size: 16px;
+    font-weight: 700;
+    color: white;
+    margin: 0;
+}
+
+.section-info {
+    color: var(--text-muted);
+    font-size: 13px;
 }
 </style>
 
-<div class="mb-4">
-    <a href="<?php echo Helper::url('rental/manage/' . $rentalId); ?>" class="btn btn-outline-primary">
-        <i class="bi bi-arrow-left me-2"></i>Geri Dön
-    </a>
-</div>
-
-<div class="card">
-    <div class="card-header">
-        <h5><i class="bi bi-bank me-2"></i>İBAN Yönetimi</h5>
+<div class="container-fluid py-4">
+    <!-- Page Header -->
+    <div class="page-header">
         <div>
-            <span style="color: var(--text-muted); font-size: 14px;">
-                <?php echo htmlspecialchars($rental['script_name']); ?> - <?php echo htmlspecialchars($rental['domain']); ?>
-            </span>
-        </div>
-    </div>
-    <div class="card-body">
-        
-        <?php if (isset($_SESSION['success'])): ?>
-        <div class="alert alert-success">
-            <i class="bi bi-check-circle me-2"></i><?php echo $_SESSION['success']; unset($_SESSION['success']); ?>
-        </div>
-        <?php endif; ?>
-        
-        <?php if (isset($_SESSION['error'])): ?>
-        <div class="alert alert-danger">
-            <i class="bi bi-x-circle me-2"></i><?php echo $_SESSION['error']; unset($_SESSION['error']); ?>
-        </div>
-        <?php endif; ?>
-        
-        <!-- Yeni İBAN Ekleme Formu -->
-        <div class="add-iban-form">
-            <h6 class="mb-3"><i class="bi bi-plus-circle me-2"></i>Yeni İBAN Ekle</h6>
-            <form method="POST">
-                <input type="hidden" name="action" value="add">
-                <div class="form-grid">
-                    <div>
-                        <label class="form-label">Banka Adı</label>
-                        <input type="text" name="bank_name" class="form-control" placeholder="örn: Ziraat Bankası" required>
-                    </div>
-                    <div>
-                        <label class="form-label">Hesap Sahibi</label>
-                        <input type="text" name="account_holder" class="form-control" placeholder="Ad Soyad" required>
-                    </div>
-                    <div>
-                        <label class="form-label">İBAN Numarası</label>
-                        <input type="text" name="iban" class="form-control" placeholder="TR00 0000 0000 0000 0000 0000 00" 
-                               pattern="^TR\d{24}$" maxlength="26" style="font-family: 'Courier New', monospace;" required>
-                        <small class="text-muted">TR ile başlamalı, toplam 26 karakter</small>
-                    </div>
-                </div>
-                <button type="submit" class="btn btn-primary mt-3">
-                    <i class="bi bi-plus-lg me-2"></i>İBAN Ekle
-                </button>
-            </form>
-        </div>
-        
-        <!-- İBAN Listesi -->
-        <?php if ($ibans): ?>
-        <div class="mb-3">
-            <h6><i class="bi bi-list-ul me-2"></i>Kayıtlı İBANlar (<?php echo count($ibans); ?>)</h6>
-            <p class="text-muted" style="font-size: 14px;">
-                <i class="bi bi-info-circle me-1"></i>
-                Sıralamayı değiştirmek için kartları sürükleyin
-            </p>
-        </div>
-        
-        <div id="ibanList">
-            <?php foreach ($ibans as $iban): ?>
-            <div class="iban-card <?php echo $iban['status'] === 'inactive' ? 'inactive' : ''; ?>" data-iban-id="<?php echo $iban['id']; ?>">
-                <div class="iban-info">
-                    <div class="drag-handle">
-                        <i class="bi bi-grip-vertical" style="font-size: 20px;"></i>
-                    </div>
-                    <div class="bank-logo">
-                        <?php echo strtoupper(substr($iban['bank_name'], 0, 1)); ?>
-                    </div>
-                    <div class="iban-details">
-                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 5px;">
-                            <h6><?php echo htmlspecialchars($iban['bank_name']); ?></h6>
-                            <span class="badge-<?php echo $iban['status']; ?>">
-                                <?php echo $iban['status'] === 'active' ? 'Aktif' : 'Pasif'; ?>
-                            </span>
-                        </div>
-                        <div style="color: var(--text-muted); font-size: 14px; margin-bottom: 3px;">
-                            <?php echo htmlspecialchars($iban['account_holder']); ?>
-                        </div>
-                        <div class="iban-number">
-                            <?php echo htmlspecialchars(chunk_split($iban['iban'], 4, ' ')); ?>
-                        </div>
-                    </div>
-                    <div class="iban-actions">
-                        <form method="POST" style="display: inline;">
-                            <input type="hidden" name="action" value="toggle">
-                            <input type="hidden" name="iban_id" value="<?php echo $iban['id']; ?>">
-                            <input type="hidden" name="new_status" value="<?php echo $iban['status'] === 'active' ? 'inactive' : 'active'; ?>">
-                            <button type="submit" class="btn btn-sm btn-<?php echo $iban['status'] === 'active' ? 'warning' : 'success'; ?>" 
-                                    title="<?php echo $iban['status'] === 'active' ? 'Pasif Yap' : 'Aktif Yap'; ?>">
-                                <i class="bi bi-<?php echo $iban['status'] === 'active' ? 'pause' : 'play'; ?>-fill"></i>
-                            </button>
-                        </form>
-                        <button class="btn btn-sm btn-outline-primary" onclick="copyIban('<?php echo $iban['iban']; ?>')" title="Kopyala">
-                            <i class="bi bi-clipboard"></i>
-                        </button>
-                        <form method="POST" style="display: inline;" onsubmit="return confirm('Bu İBAN silinecek. Emin misiniz?');">
-                            <input type="hidden" name="action" value="delete">
-                            <input type="hidden" name="iban_id" value="<?php echo $iban['id']; ?>">
-                            <button type="submit" class="btn btn-sm btn-outline-danger" title="Sil">
-                                <i class="bi bi-trash"></i>
-                            </button>
-                        </form>
-                    </div>
-                </div>
+            <h4 style="margin: 0 0 8px 0; color: white;"><i class="bi bi-bank me-2"></i>IBAN Yönetimi</h4>
+            <div style="color: var(--text-secondary); font-size: 14px;">
+                <i class="bi bi-box-seam me-1"></i>
+                <?php echo htmlspecialchars($rental['script_name']); ?> 
+                <span style="opacity: 0.5; margin: 0 8px;">•</span>
+                <i class="bi bi-globe me-1"></i>
+                <?php echo htmlspecialchars($rental['domain']); ?>
             </div>
-            <?php endforeach; ?>
         </div>
-        
-        <?php else: ?>
-        <div class="text-center py-5" style="color: var(--text-muted);">
-            <i class="bi bi-inbox" style="font-size: 48px; opacity: 0.3;"></i>
-            <p class="mt-3">Henüz İBAN eklenmemiş</p>
+        <a href="<?php echo Helper::url('rental/manage/' . $rentalId); ?>" class="btn btn-outline-primary">
+            <i class="bi bi-arrow-left me-2"></i>Geri Dön
+        </a>
+    </div>
+
+    <div class="card" style="background: rgba(26, 26, 46, 0.8); border: 1px solid rgba(255, 255, 255, 0.1);">
+        <div class="card-body" style="padding: 32px;">
+            
+            <?php if (isset($_SESSION['success'])): ?>
+            <div class="alert alert-success" style="background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); color: var(--success); border-radius: 12px; margin-bottom: 24px;">
+                <i class="bi bi-check-circle me-2"></i><?php echo $_SESSION['success']; unset($_SESSION['success']); ?>
+            </div>
+            <?php endif; ?>
+            
+            <?php if (isset($_SESSION['error'])): ?>
+            <div class="alert alert-danger" style="background: rgba(220, 38, 38, 0.15); border: 1px solid rgba(220, 38, 38, 0.3); color: #ff4444; border-radius: 12px; margin-bottom: 24px;">
+                <i class="bi bi-x-circle me-2"></i><?php echo $_SESSION['error']; unset($_SESSION['error']); ?>
+            </div>
+            <?php endif; ?>
+            
+            <!-- Yeni IBAN Ekleme -->
+            <div class="add-iban-section">
+                <h6 style="color: white; font-size: 18px; margin-bottom: 24px;">
+                    <i class="bi bi-plus-circle me-2" style="color: var(--primary);"></i>Yeni IBAN Ekle
+                </h6>
+                <form method="POST">
+                    <input type="hidden" name="action" value="add">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Banka Adı</label>
+                            <input type="text" name="bank_name" placeholder="örn: Ziraat Bankası" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Hesap Sahibi</label>
+                            <input type="text" name="account_holder" placeholder="Ad Soyad" required>
+                        </div>
+                        <div class="form-group">
+                            <label>IBAN Numarası</label>
+                            <input type="text" name="iban" placeholder="TR00 0000 0000 0000 0000 0000 00" 
+                                   pattern="^TR\d{24}$" maxlength="26" style="font-family: 'Courier New', monospace;" required>
+                            <small><i class="bi bi-info-circle me-1"></i>TR ile başlamalı, toplam 26 karakter</small>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary" style="padding: 12px 32px; font-weight: 600;">
+                        <i class="bi bi-plus-lg me-2"></i>IBAN Ekle
+                    </button>
+                </form>
+            </div>
+            
+            <!-- IBAN Listesi -->
+            <?php if ($ibans): ?>
+            <div class="section-header">
+                <h6><i class="bi bi-list-ul me-2"></i>Kayıtlı IBANlar (<?php echo count($ibans); ?>)</h6>
+                <span class="section-info">
+                    <i class="bi bi-grip-vertical me-1"></i>Sıralamak için sürükleyin
+                </span>
+            </div>
+            
+            <div id="ibanList">
+                <?php foreach ($ibans as $iban): ?>
+                <div class="iban-card <?php echo $iban['status'] === 'inactive' ? 'inactive' : ''; ?>" data-iban-id="<?php echo $iban['id']; ?>">
+                    <div class="iban-info">
+                        <div class="drag-handle">
+                            <i class="bi bi-grip-vertical" style="font-size: 24px;"></i>
+                        </div>
+                        <div class="bank-icon">
+                            <?php echo strtoupper(substr($iban['bank_name'], 0, 1)); ?>
+                        </div>
+                        <div class="iban-details">
+                            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
+                                <h6><?php echo htmlspecialchars($iban['bank_name']); ?></h6>
+                                <span class="status-badge <?php echo $iban['status']; ?>">
+                                    <?php echo $iban['status'] === 'active' ? 'Aktif' : 'Pasif'; ?>
+                                </span>
+                            </div>
+                            <div class="iban-holder">
+                                <i class="bi bi-person"></i>
+                                <?php echo htmlspecialchars($iban['account_holder']); ?>
+                            </div>
+                            <div class="iban-number">
+                                <?php echo htmlspecialchars(chunk_split($iban['iban'], 4, ' ')); ?>
+                            </div>
+                        </div>
+                        <div class="iban-actions">
+                            <button class="btn btn-sm btn-outline-primary" onclick="copyIban('<?php echo $iban['iban']; ?>')" title="Kopyala">
+                                <i class="bi bi-clipboard"></i>
+                            </button>
+                            <form method="POST" style="display: inline;">
+                                <input type="hidden" name="action" value="toggle">
+                                <input type="hidden" name="iban_id" value="<?php echo $iban['id']; ?>">
+                                <input type="hidden" name="new_status" value="<?php echo $iban['status'] === 'active' ? 'inactive' : 'active'; ?>">
+                                <button type="submit" class="btn btn-sm btn-<?php echo $iban['status'] === 'active' ? 'warning' : 'success'; ?>" 
+                                        title="<?php echo $iban['status'] === 'active' ? 'Pasif Yap' : 'Aktif Yap'; ?>">
+                                    <i class="bi bi-<?php echo $iban['status'] === 'active' ? 'pause' : 'play'; ?>-fill"></i>
+                                </button>
+                            </form>
+                            <form method="POST" style="display: inline;" onsubmit="return confirm('Bu IBAN silinecek. Emin misiniz?');">
+                                <input type="hidden" name="action" value="delete">
+                                <input type="hidden" name="iban_id" value="<?php echo $iban['id']; ?>">
+                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Sil">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+            
+            <?php else: ?>
+            <div class="text-center py-5" style="color: var(--text-muted);">
+                <i class="bi bi-inbox" style="font-size: 64px; opacity: 0.2;"></i>
+                <h5 class="mt-3" style="color: white;">Henüz IBAN eklenmemiş</h5>
+                <p>Yukarıdaki formu kullanarak ilk IBAN'ınızı ekleyin</p>
+            </div>
+            <?php endif; ?>
+            
         </div>
-        <?php endif; ?>
-        
     </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
 <script>
-// IBAN Kopyalama
 function copyIban(iban) {
     navigator.clipboard.writeText(iban).then(() => {
-        alert('İBAN kopyalandı: ' + iban);
+        alert('IBAN kopyalandı: ' + iban);
     });
 }
 
-// Sürükle bırak
 <?php if ($ibans): ?>
 const ibanList = document.getElementById('ibanList');
 new Sortable(ibanList, {
     handle: '.drag-handle',
     animation: 150,
     onEnd: function(evt) {
-        // Yeni sıralamayı kaydet
         const ibanIds = Array.from(ibanList.children).map(el => el.dataset.ibanId);
         
         fetch(window.location.href, {
@@ -352,11 +478,10 @@ new Sortable(ibanList, {
 });
 <?php endif; ?>
 
-// IBAN formatı otomatik düzenleme
 document.querySelector('input[name="iban"]').addEventListener('input', function(e) {
     let value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
     e.target.value = value;
 });
 </script>
 
-<?php require 'templates/footer_new.php'; ?>
+<?php require 'templates/footer.php'; ?>

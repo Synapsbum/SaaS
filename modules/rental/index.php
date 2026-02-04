@@ -17,18 +17,18 @@ require 'templates/header.php';
 
 <link rel="stylesheet" href="assets/css/dashboard.css">
 
-<div class="card">
-    <div class="card-header">
-        <h5><i class="bi bi-key me-2"></i>Script Kiralamalarım</h5>
+<div class="card" style="background: rgba(15, 15, 30, 0.95); border: 1px solid rgba(255, 255, 255, 0.1);">
+    <div class="card-header" style="background: rgba(10, 10, 25, 0.95); border-bottom: 1px solid rgba(255, 255, 255, 0.1); padding: 20px 24px; display: flex; justify-content: space-between; align-items: center;">
+        <h5 style="margin: 0; color: var(--text-primary); font-weight: 600;"><i class="bi bi-key me-2"></i>Script Kiralamalarım</h5>
         <a href="<?php echo Helper::url('scripts'); ?>" class="btn btn-primary btn-sm">
             <i class="bi bi-plus-circle"></i>
             Yeni Kiralama
         </a>
     </div>
-    <div class="card-body">
+    <div class="card-body" style="padding: 0; background: rgba(15, 15, 30, 0.9);">
         <?php if ($rentals): ?>
         <div class="table-responsive">
-            <table class="table">
+            <table class="table table-rentals">
                 <thead>
                     <tr>
                         <th><i class="bi bi-box-seam me-2"></i>Script</th>
@@ -103,7 +103,7 @@ require 'templates/header.php';
             </table>
         </div>
         <?php else: ?>
-        <div class="empty-state">
+        <div class="empty-state" style="padding: 60px 20px; background: transparent;">
             <div class="empty-icon">
                 <i class="bi bi-inbox"></i>
             </div>
@@ -117,5 +117,46 @@ require 'templates/header.php';
         <?php endif; ?>
     </div>
 </div>
+
+<style>
+.table-rentals {
+    margin: 0;
+    background: transparent;
+}
+
+.table-rentals thead tr {
+    background: rgba(10, 10, 25, 0.6);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.table-rentals thead th {
+    background: transparent;
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 16px 20px;
+    border: none;
+}
+
+.table-rentals tbody tr {
+    background: transparent;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    transition: background 0.2s;
+}
+
+.table-rentals tbody tr:hover {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.table-rentals tbody td {
+    background: transparent;
+    color: var(--text-primary);
+    padding: 16px 20px;
+    border: none;
+    vertical-align: middle;
+}
+</style>
 
 <?php require 'templates/footer.php'; ?>

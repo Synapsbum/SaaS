@@ -1,24 +1,13 @@
 RewriteEngine On
-
-# Ana dizin (tokat.bet için)
 RewriteBase /
+RewriteRule ^callback\.php$ - [L]
 
-# www yönlendirme (isteğe bağlı)
-# RewriteCond %{HTTP_HOST} ^www\.(.*)$ [NC]
-# RewriteRule ^(.*)$ http://%1/$1 [R=301,L]
+RewriteCond %{HTTP_HOST} ^www\.(.*)$ [NC]
+RewriteRule ^(.*)$ https://%1/$1 [R=301,L]
 
-# Dosya ve klasör yoksa index.php'ye yönlendir
+RewriteCond %{HTTPS} off
+RewriteRule ^(.*)$ https://%{HTTP_HOST}/$1 [R=301,L]
+
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^(.*)$ index.php [QSA,L]
-
-# Güvenlik
-Options -Indexes
-ServerSignature Off
-
-# PHP ayarları
-php_flag display_errors on
-php_value upload_max_filesize 64M
-php_value post_max_size 64M
-php_value max_execution_time 300
-php_value max_input_time 300
