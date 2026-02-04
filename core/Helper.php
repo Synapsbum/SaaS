@@ -66,6 +66,14 @@ class Helper {
         header('Location: ' . self::url($path));
         exit;
     }
+
+    // core/Helper.php içine ekle
+    public static function slug($string) {
+        $string = strtolower(trim($string));
+        $string = preg_replace('/[^a-z0-9-]/', '-', $string);
+        $string = preg_replace('/-+/', '-', $string);
+        return $string;
+    }
     
     // Flash mesaj
     public static function flash($key, $value = null) {

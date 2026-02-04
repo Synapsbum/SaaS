@@ -11,38 +11,31 @@ $csrfToken = $_SESSION[CSRF_TOKEN_NAME];
 // İşlemler
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!isset($_POST['csrf_token']) || !hash_equals($csrfToken, $_POST['csrf_token'])) {
-        Helper::flash('error', 'Güvenlik hatası');
+        $_SESSION['flash_error'] = 'Güvenlik hatası';
     } else {
         $action = $_POST['action'] ?? '';
         $rentalId = intval($_POST['rental_id'] ?? 0);
         
         switch ($action) {
             case 'update_status':
-                $db->update('rentals', [
-                    'status' => $_POST['status'],
-                    'expires_at' => $_POST['expires_at'] ?? null
-                ], 'id = ?', [$rentalId]);
-                Helper::flash('success', 'Kiralama durumu güncellendi');
+                $db->query("UPDATE rentals SET status = ?, expires_at = ? WHERE id = ?", [
+                    $_POST['status'],
+                    $_POST['expires_at'],
+                    $rentalId
+                ]);
+                $_SESSION['flash_success'] = 'Kiralama durumu güncellendi';
                 break;
                 
             case 'terminate':
-                $db->update('rentals', [
-                    'status' => 'terminated',
-                    'terminated_at' => date('Y-m-d H:i:s'),
-                    'termination_reason' => $_POST['reason'] ?? 'Admin tarafından sonlandırıldı'
-                ], 'id = ?', [$rentalId]);
+                $db->query("UPDATE rentals SET status = 'cancelled' WHERE id = ?", [$rentalId]);
                 
-                // Domain'i serbest bırak
+                // Domain'i serbest bırak - current_rental_id kullan
                 $rental = $db->fetch("SELECT domain_id FROM rentals WHERE id = ?", [$rentalId]);
                 if ($rental && $rental['domain_id']) {
-                    $db->update('script_domains', [
-                        'status' => 'available',
-                        'current_user_id' => null,
-                        'rental_id' => null
-                    ], 'id = ?', [$rental['domain_id']]);
+                    $db->query("UPDATE script_domains SET status = 'available', current_user_id = NULL WHERE id = ?", [$rental['domain_id']]);
                 }
                 
-                Helper::flash('success', 'Kiralama sonlandırıldı');
+                $_SESSION['flash_success'] = 'Kiralama sonlandırıldı';
                 break;
                 
             case 'extend':
@@ -53,22 +46,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if ($currentExpiry < time()) $currentExpiry = time();
                     $newExpiry = date('Y-m-d H:i:s', strtotime("+{$days} days", $currentExpiry));
                     
-                    $db->update('rentals', ['expires_at' => $newExpiry], 'id = ?', [$rentalId]);
-                    Helper::flash('success', 'Kiralama ' . $days . ' gün uzatıldı');
+                    $db->query("UPDATE rentals SET expires_at = ? WHERE id = ?", [$newExpiry, $rentalId]);
+                    $_SESSION['flash_success'] = 'Kiralama ' . $days . ' gün uzatıldı';
                 }
                 break;
                 
             case 'delete':
                 $rental = $db->fetch("SELECT domain_id FROM rentals WHERE id = ?", [$rentalId]);
                 if ($rental && $rental['domain_id']) {
-                    $db->update('script_domains', [
-                        'status' => 'available',
-                        'current_user_id' => null,
-                        'rental_id' => null
-                    ], 'id = ?', [$rental['domain_id']]);
+                    $db->query("UPDATE script_domains SET status = 'available', current_user_id = NULL WHERE id = ?", [$rental['domain_id']]);
                 }
                 $db->query("DELETE FROM rentals WHERE id = ?", [$rentalId]);
-                Helper::flash('success', 'Kiralama silindi');
+                $_SESSION['flash_success'] = 'Kiralama silindi';
                 break;
         }
     }
@@ -79,14 +68,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // Kiralamaları çek
 $statusFilter = $_GET['status'] ?? 'all';
 $sql = "
-    SELECT r.*, u.username, u.email, s.name as script_name, 
-           d.domain, r.domain_id, r.expires_at, r.status, r.created_at
+    SELECT r.*, u.username, u.email, s.name as script_name, d.domain
     FROM rentals r
     JOIN users u ON r.user_id = u.id
     JOIN scripts s ON r.script_id = s.id
     LEFT JOIN script_domains d ON r.domain_id = d.id
 ";
-
 if ($statusFilter != 'all') {
     $sql .= " WHERE r.status = '{$statusFilter}'";
 }
@@ -99,7 +86,7 @@ $stats = [
     'active' => $db->fetch("SELECT COUNT(*) as total FROM rentals WHERE status = 'active'")['total'],
     'pending' => $db->fetch("SELECT COUNT(*) as total FROM rentals WHERE status = 'pending'")['total'],
     'expired' => $db->fetch("SELECT COUNT(*) as total FROM rentals WHERE status = 'expired' OR (status = 'active' AND expires_at < NOW())")['total'],
-    'terminated' => $db->fetch("SELECT COUNT(*) as total FROM rentals WHERE status = 'terminated'")['total']
+    'cancelled' => $db->fetch("SELECT COUNT(*) as total FROM rentals WHERE status = 'cancelled'")['total']
 ];
 
 require dirname(__FILE__) . '/templates/header.php';
@@ -126,8 +113,8 @@ require dirname(__FILE__) . '/templates/header.php';
     </div>
     <div class="col-md-3 mb-3">
         <div class="stat-card">
-            <div class="stat-value text-danger"><?php echo $stats['terminated']; ?></div>
-            <div class="stat-label">Sonlandırılmış</div>
+            <div class="stat-value text-danger"><?php echo $stats['cancelled']; ?></div>
+            <div class="stat-label">İptal Edilmiş</div>
         </div>
     </div>
 </div>
@@ -163,7 +150,7 @@ require dirname(__FILE__) . '/templates/header.php';
                 <tr>
                     <td>#<?php echo $r['id']; ?></td>
                     <td>
-                        <strong><?php echo htmlspecialchars($r['username']); ?></strong>
+                        <strong><?php echo htmlspecialchars($r['username'] ?? ''); ?></strong>
                         <div class="small text-muted"><?php echo $r['email']; ?></div>
                     </td>
                     <td><?php echo htmlspecialchars($r['script_name']); ?></td>
@@ -171,7 +158,7 @@ require dirname(__FILE__) . '/templates/header.php';
                         <?php if ($r['domain']): ?>
                             <code class="text-info"><?php echo htmlspecialchars($r['domain']); ?></code>
                         <?php else: ?>
-                            <span class="text-muted">Domain atanmadı</span>
+                            <span class="text-muted">-</span>
                         <?php endif; ?>
                     </td>
                     <td>
@@ -189,7 +176,7 @@ require dirname(__FILE__) . '/templates/header.php';
                         <span class="badge bg-<?php 
                             echo $r['status'] == 'active' ? ($isExpired ? 'danger' : 'success') : 
                                  ($r['status'] == 'pending' ? 'warning' : 
-                                 ($r['status'] == 'terminated' ? 'dark' : 'secondary')); 
+                                 ($r['status'] == 'cancelled' ? 'dark' : 'secondary')); 
                         ?>">
                             <?php echo $isExpired ? 'Süresi Dolmuş' : $r['status']; ?>
                         </span>
@@ -212,7 +199,7 @@ require dirname(__FILE__) . '/templates/header.php';
                             </button>
                             <?php endif; ?>
                             
-                            <form method="POST" class="d-inline" onsubmit="return confirm('Bu kiralamayı silmek istediğinize emin misiniz?');">
+                            <form method="POST" class="d-inline" onsubmit="return confirm('Silmek istediğinize emin misiniz?');">
                                 <input type="hidden" name="csrf_token" value="<?php echo $csrfToken; ?>">
                                 <input type="hidden" name="action" value="delete">
                                 <input type="hidden" name="rental_id" value="<?php echo $r['id']; ?>">
@@ -239,22 +226,12 @@ require dirname(__FILE__) . '/templates/header.php';
                                     <input type="hidden" name="rental_id" value="<?php echo $r['id']; ?>">
                                     
                                     <div class="mb-3">
-                                        <label class="form-label">Kullanıcı</label>
-                                        <input type="text" class="form-control form-control-dark" value="<?php echo htmlspecialchars($r['username']); ?>" disabled>
-                                    </div>
-                                    
-                                    <div class="mb-3">
-                                        <label class="form-label">Script</label>
-                                        <input type="text" class="form-control form-control-dark" value="<?php echo htmlspecialchars($r['script_name']); ?>" disabled>
-                                    </div>
-                                    
-                                    <div class="mb-3">
                                         <label class="form-label">Durum</label>
                                         <select name="status" class="form-select form-control-dark">
                                             <option value="active" <?php echo $r['status'] == 'active' ? 'selected' : ''; ?>>Aktif</option>
                                             <option value="pending" <?php echo $r['status'] == 'pending' ? 'selected' : ''; ?>>Bekleyen</option>
-                                            <option value="suspended" <?php echo $r['status'] == 'suspended' ? 'selected' : ''; ?>>Askıya Alınmış</option>
                                             <option value="expired" <?php echo $r['status'] == 'expired' ? 'selected' : ''; ?>>Süresi Dolmuş</option>
+                                            <option value="cancelled" <?php echo $r['status'] == 'cancelled' ? 'selected' : ''; ?>>İptal Edilmiş</option>
                                         </select>
                                     </div>
                                     
@@ -294,10 +271,7 @@ require dirname(__FILE__) . '/templates/header.php';
                                     
                                     <div class="mb-3">
                                         <label class="form-label">Kaç Gün Eklenecek?</label>
-                                        <div class="input-group">
-                                            <input type="number" name="days" class="form-control form-control-dark" value="30" min="1" required>
-                                            <span class="input-group-text bg-dark text-light border-secondary">gün</span>
-                                        </div>
+                                        <input type="number" name="days" class="form-control form-control-dark" value="30" min="1" required>
                                     </div>
                                 </div>
                                 <div class="modal-footer">
@@ -314,7 +288,7 @@ require dirname(__FILE__) . '/templates/header.php';
                     <div class="modal-dialog">
                         <div class="modal-content">
                             <div class="modal-header">
-                                <h5 class="modal-title">Kiralama Sonlandır #<?php echo $r['id']; ?></h5>
+                                <h5 class="modal-title">Kiralama İptal #<?php echo $r['id']; ?></h5>
                                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                             </div>
                             <form method="POST">
@@ -326,11 +300,6 @@ require dirname(__FILE__) . '/templates/header.php';
                                     <div class="alert alert-danger">
                                         <i class="bi bi-exclamation-triangle me-2"></i>
                                         Bu işlem geri alınamaz! Domain serbest bırakılacak.
-                                    </div>
-                                    
-                                    <div class="mb-3">
-                                        <label class="form-label">Sonlandırma Nedeni</label>
-                                        <textarea name="reason" class="form-control form-control-dark" rows="3" required></textarea>
                                     </div>
                                 </div>
                                 <div class="modal-footer">
@@ -356,4 +325,4 @@ require dirname(__FILE__) . '/templates/header.php';
     </div>
 </div>
 
-<?php require 'templates/footer.php'; ?>
+<?php require dirname(__FILE__) . '/templates/footer.php'; ?>

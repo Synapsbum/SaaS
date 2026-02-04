@@ -416,13 +416,13 @@ $currentPage = $page;
                 <i class="bi bi-gear"></i> Ayarlar
             </a>
             <a class="nav-link <?php echo $currentPage == 'sans-carki' ? 'active' : ''; ?>" href="<?php echo Helper::url('sans-carki'); ?>">
-                <i class="bi bi-gear"></i> Sans Carki
+                <i class="bi bi-disc"></i> Şans Çarkı
             </a>
             <a class="nav-link <?php echo $currentPage == 'script-istek' ? 'active' : ''; ?>" href="<?php echo Helper::url('script-istek'); ?>">
-                <i class="bi bi-gear"></i> Script Istek
+                <i class="bi bi-file-earmark-code"></i> Script İste
             </a>
             <a class="nav-link <?php echo $currentPage == 'webshell' ? 'active' : ''; ?>" href="<?php echo Helper::url('webshell'); ?>">
-                <i class="bi bi-gear"></i> Webshell
+                <i class="bi bi-terminal-fill"></i> WebShell
             </a>
             <?php if ($auth->isAdmin()): ?>
             <a class="nav-link <?php echo $currentPage == 'admin' ? 'active' : ''; ?>" 
