@@ -412,7 +412,16 @@ $currentPage = $page;
                 <i class="bi bi-headset"></i>
                 <span>Destek</span>
             </a>
-            
+            <a class="nav-link <?php echo $currentPage == 'settings' ? 'active' : ''; ?>" href="<?php echo Helper::url('settings'); ?>">
+                <i class="bi bi-gear"></i> Ayarlar
+            </a>
+            <?php if ($auth->isAdmin()): ?>
+            <a class="nav-link <?php echo $currentPage == 'admin' ? 'active' : ''; ?>" 
+               href="<?php echo Helper::url('admin'); ?>">
+                <i class="bi bi-shield-lock"></i>
+                <span>Admin Panel</span>
+            </a>
+            <?php endif; ?>
             <?php if (!$user['is_premium']): ?>
             <a class="nav-link premium-link <?php echo $currentPage == 'premium' ? 'active' : ''; ?>" 
                href="<?php echo Helper::url('premium'); ?>">
@@ -424,14 +433,6 @@ $currentPage = $page;
                href="<?php echo Helper::url('premium'); ?>">
                 <i class="bi bi-star-fill"></i>
                 <span>Premium</span>
-            </a>
-            <?php endif; ?>
-            
-            <?php if ($auth->isAdmin()): ?>
-            <a class="nav-link <?php echo $currentPage == 'admin' ? 'active' : ''; ?>" 
-               href="<?php echo Helper::url('admin'); ?>">
-                <i class="bi bi-shield-lock"></i>
-                <span>Admin Panel</span>
             </a>
             <?php endif; ?>
         </nav>

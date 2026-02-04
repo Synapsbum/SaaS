@@ -71,6 +71,9 @@ switch ($page) {
             require 'modules/support/index.php';
         }
         break;
+    case 'settings':
+        require 'modules/dashboard/settings.php';
+        break;
     case 'admin':
         if ($action) {
             $adminFile = 'modules/admin/' . $action . '.php';

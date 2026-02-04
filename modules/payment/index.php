@@ -111,7 +111,7 @@ require 'templates/header.php';
                         </div>
                         <div style="flex: 1;">
                             <div style="font-weight: 600; color: var(--text-primary); margin-bottom: 4px; font-size: 14px;">Güvenli Ödeme</div>
-                            <div style="color: var(--text-secondary); font-size: 13px;">Ödemeler Cryptomus güvencesiyle USDT (TRC20) olarak işlenir</div>
+                            <div style="color: var(--text-secondary); font-size: 13px;">Ödemeler OxaPay güvencesiyle USDT (TRC20) olarak işlenir</div>
                         </div>
                     </div>
                 </div>
