@@ -10,9 +10,10 @@ $stats = [
 ];
 
 $recentRentals = $db->fetchAll("
-    SELECT r.*, s.name as script_name, s.slug 
+    SELECT r.*, s.name as script_name, s.slug, d.domain
     FROM rentals r 
     JOIN scripts s ON r.script_id = s.id 
+    LEFT JOIN script_domains d ON r.domain_id = d.id
     WHERE r.user_id = ? 
     ORDER BY r.created_at DESC 
     LIMIT 5
@@ -67,9 +68,11 @@ require 'templates/header.php';
                         <thead>
                             <tr>
                                 <th>Script</th>
+                                <th>Domain</th>
                                 <th>Durum</th>
                                 <th>Süre</th>
                                 <th>Fiyat</th>
+                                <th>İşlem</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -78,6 +81,15 @@ require 'templates/header.php';
                                 <td>
                                     <i class="bi bi-box-seam me-2"></i>
                                     <?php echo $rental['script_name']; ?>
+                                </td>
+                                <td>
+                                    <?php if ($rental['domain']): ?>
+                                    <code style="background: rgba(99, 102, 241, 0.1); padding: 4px 8px; border-radius: 6px; color: var(--primary-light); font-size: 12px;">
+                                        <?php echo $rental['domain']; ?>
+                                    </code>
+                                    <?php else: ?>
+                                    <span class="text-muted">-</span>
+                                    <?php endif; ?>
                                 </td>
                                 <td><?php echo Helper::statusBadge($rental['status']); ?></td>
                                 <td>
@@ -90,6 +102,26 @@ require 'templates/header.php';
                                 </td>
                                 <td>
                                     <strong><?php echo Helper::money($rental['price_paid']); ?></strong>
+                                </td>
+                                <td>
+                                    <?php if (in_array($rental['status'], ['setup_domain', 'setup_config', 'setup_deploy'])): ?>
+                                    <a href="<?php echo Helper::url('rental/setup/' . $rental['id']); ?>" class="btn btn-warning btn-sm">
+                                        <i class="bi bi-play-fill"></i>
+                                        Devam
+                                    </a>
+                                    <?php elseif ($rental['status'] == 'pending'): ?>
+                                    <a href="<?php echo Helper::url('rental/setup/' . $rental['id']); ?>" class="btn btn-primary btn-sm">
+                                        <i class="bi bi-rocket"></i>
+                                        Başlat
+                                    </a>
+                                    <?php elseif ($rental['status'] == 'active'): ?>
+                                    <a href="<?php echo Helper::url('rental/manage/' . $rental['id']); ?>" class="btn btn-success btn-sm">
+                                        <i class="bi bi-speedometer2"></i>
+                                        Yönet
+                                    </a>
+                                    <?php else: ?>
+                                    <span class="text-muted">-</span>
+                                    <?php endif; ?>
                                 </td>
                             </tr>
                             <?php endforeach; ?>

@@ -47,6 +47,7 @@ switch ($page) {
         break;
     case 'scripts':
         if ($action === 'buy' && $id) {
+            $_GET['id'] = $id; // ID'yi $_GET'e set et
             require 'modules/scripts/buy.php';
         } else {
             require 'modules/scripts/index.php';
@@ -54,7 +55,20 @@ switch ($page) {
         break;
     case 'rental':
         if ($action === 'setup' && $id) {
+            $_GET['id'] = $id; // ID'yi $_GET'e set et
             require 'modules/rental/setup.php';
+        } elseif ($action === 'manage' && $id) {
+            $_GET['id'] = $id; // ID'yi $_GET'e set et
+            $subAction = $segments[3] ?? null;
+            if ($subAction === 'ibans') {
+                require 'modules/rental/ibans.php';
+            } elseif ($subAction === 'wallets') {
+                require 'modules/rental/wallets.php';
+            } elseif ($subAction === 'settings') {
+                require 'modules/rental/settings.php';
+            } else {
+                require 'modules/rental/manage.php';
+            }
         } else {
             require 'modules/rental/index.php';
         }
@@ -66,6 +80,7 @@ switch ($page) {
         if ($action === 'new') {
             require 'modules/support/new.php';
         } elseif ($action === 'view' && $id) {
+            $_GET['id'] = $id; // ID'yi $_GET'e set et
             require 'modules/support/view.php';
         } else {
             require 'modules/support/index.php';

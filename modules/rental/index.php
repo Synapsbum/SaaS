@@ -85,6 +85,11 @@ require 'templates/header.php';
                                 <i class="bi bi-rocket"></i>
                                 Kurulum Başlat
                             </a>
+                            <?php elseif ($rental['status'] == 'active'): ?>
+                            <a href="<?php echo Helper::url('rental/manage/' . $rental['id']); ?>" class="btn btn-success btn-sm">
+                                <i class="bi bi-speedometer2"></i>
+                                Yönet
+                            </a>
                             <?php else: ?>
                             <button class="btn btn-sm" style="background: rgba(255,255,255,0.05); color: var(--text-muted); cursor: not-allowed;" disabled>
                                 <i class="bi bi-lock"></i>
